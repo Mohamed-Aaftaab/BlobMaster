@@ -1,0 +1,600 @@
+---
+title: "StorKeep — Next.js Architecture Decision & Implementation"
+description: "Why Next.js is better than NestJS, and exactly how to build it"
+version: "1.1"
+---
+
+# StorKeep as a Next.js Product
+
+## Yes — and It's Cleaner Than NestJS
+
+One app, one repo, one `vercel deploy`. The frontend dashboard, the x402-gated API routes,
+and the monitoring cron all live together. No Railway. No separate Express server. No keeping
+two services in sync during a 48-hour hackathon.
+
+Here's the complete architecture, every file, every env var.
+
+---
+
+## The Two Things You Need to Understand First
+
+### 1. SQLite is Dead on Vercel (Use Vercel Postgres)
+
+[Vercel's own docs confirm it](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel):
+
+> _"SQLite needs a local file system on the server to store data permanently... storage is ephemeral with serverless functions."_
+
+The previous PRD used SQLite. That works locally and on Railway (always-on server), but
+**breaks completely on Vercel**. Fix: use **Vercel Postgres** (free hobby tier, one click in
+the Vercel dashboard). Prisma connects to it identically — just swap the provider.
+
+### 2. `node-cron` is Dead on Vercel (Use Vercel Cron Jobs)
+
+[Confirmed by multiple sources](https://yagyaraj234.medium.com/running-cron-jobs-in-nextjs-guide-for-serverful-and-stateless-server-542dd0db0c4c):
+
+> _"node-cron works by attaching itself to the Node.js event loop... In serverless environments,
+> the process starts, handles one request, and then gets destroyed."_
+
+Fix: **Vercel Cron Jobs** — just a `vercel.json` entry that hits your API route on a schedule.
+Free on the Hobby plan (1 cron job max; we only need one). The route checks all registered
+autopilots and fires renewals.
+
+---
+
+## Project Structure
+
+```
+storkeep/
+├── app/
+│   ├── page.tsx                     # Landing — hero, stats, how it works
+│   ├── dashboard/
+│   │   └── page.tsx                 # Deal status dashboard (client component)
+│   └── api/
+│       ├── deals/
+│       │   └── [dealId]/
+│       │       ├── status/
+│       │       │   └── route.ts     # GET — free, queries Filecoin RPC
+│       │       └── renew/
+│       │           └── route.ts     # POST — x402-gated $0.25 USDC
+│       ├── autopilot/
+│       │   └── route.ts             # POST (register) — x402-gated $0.10
+│       ├── autopilot/
+│       │   └── [dealId]/
+│       │       └── route.ts         # GET (status) + DELETE (stop)
+│       └── cron/
+│           └── route.ts             # GET — Vercel cron calls this every 6h
+├── lib/
+│   ├── db.ts                        # Prisma client singleton
+│   ├── filecoin.ts                  # Filecoin JSON-RPC helpers
+│   ├── lighthouse.ts                # Lighthouse RaaS contract calls
+│   └── storkeep-registry.ts         # StorKeepRegistry.sol contract calls
+├── middleware.ts                    # x402 payment middleware
+├── prisma/
+│   └── schema.prisma                # Autopilot registrations + renewal history
+├── vercel.json                      # Cron job schedule
+├── .env.example                     # All env vars documented
+└── storkeep-sdk/                    # The SDK lives here as a workspace package
+    └── ...
+```
+
+---
+
+## `middleware.ts` — x402 Payment Gate
+
+Two packages exist. Use `x402-next` (the legacy simple one) for the hackathon —
+it's one import, no server instantiation needed.
+
+```typescript
+// middleware.ts
+import { paymentMiddleware } from 'x402-next'
+import { facilitator } from '@coinbase/x402'
+
+export const middleware = paymentMiddleware(
+  process.env.STORKEEP_WALLET_ADDRESS!,
+  {
+    // POST /api/deals/:dealId/renew — charge $0.25 per renewal
+    '/api/deals/:dealId/renew': {
+      price: '$0.25',
+      network: 'base-sepolia',
+      config: {
+        description: 'Renew a Filecoin storage deal via Lighthouse RaaS',
+        maxTimeoutSeconds: 60,
+      },
+    },
+    // POST /api/autopilot — charge $0.10 to register monitoring
+    '/api/autopilot': {
+      price: '$0.10',
+      network: 'base-sepolia',
+      config: {
+        description: 'Register deal for autopilot renewal monitoring',
+        maxTimeoutSeconds: 30,
+      },
+    },
+  },
+  facilitator,  // Coinbase CDP — needs CDP_API_KEY_ID + CDP_API_KEY_SECRET
+)
+
+export const config = {
+  matcher: [
+    '/api/deals/:dealId/renew',
+    '/api/autopilot',
+  ],
+  runtime: 'nodejs',  // required — x402 needs Node.js, not Edge
+}
+```
+
+**Install:**
+```bash
+npm install x402-next @coinbase/x402
+```
+
+---
+
+## API Routes
+
+### `app/api/deals/[dealId]/status/route.ts` — Free
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+import { getDealFromChain } from '@/lib/filecoin'
+
+export const runtime = 'nodejs'
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { dealId: string } }
+) {
+  const { dealId } = params
+
+  if (!/^\d+$/.test(dealId)) {
+    return NextResponse.json({ error: 'Invalid deal ID' }, { status: 400 })
+  }
+
+  try {
+    const deal = await getDealFromChain(dealId)
+    return NextResponse.json(deal)
+  } catch (e: any) {
+    if (e.message?.includes('not found')) {
+      return NextResponse.json({ error: 'Deal not found' }, { status: 404 })
+    }
+    return NextResponse.json({ error: 'Chain query failed' }, { status: 500 })
+  }
+}
+```
+
+### `app/api/deals/[dealId]/renew/route.ts` — x402-gated
+
+By the time this handler runs, x402 middleware has already verified and settled the
+USDC payment. Only successful API responses (status < 400) charge the caller — this
+is guaranteed by `withX402` or the middleware's behavior.
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+import { getDealFromChain } from '@/lib/filecoin'
+import { submitRaaS } from '@/lib/lighthouse'
+import { recordRenewal } from '@/lib/storkeep-registry'
+
+export const runtime = 'nodejs'
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { dealId: string } }
+) {
+  const { dealId } = params
+
+  // 1. Verify deal exists and is not already expired
+  const deal = await getDealFromChain(dealId)
+  if (deal.status === 'expired') {
+    return NextResponse.json({ error: 'Deal already expired' }, { status: 422 })
+  }
+
+  // 2. Submit renewal to Lighthouse RaaS contract on Filecoin Calibration
+  const { lighthouseJobId, txHash } = await submitRaaS(deal.pieceCid)
+
+  // 3. Record on StorKeepRegistry.sol (on-chain audit trail)
+  const registryTx = await recordRenewal({
+    dealId,
+    pieceCid: deal.pieceCid,
+    lighthouseJobId,
+  })
+
+  // 4. Get payer address from x402 payment header (set by middleware)
+  const payerAddress = req.headers.get('x-payment-payer') ?? 'unknown'
+
+  return NextResponse.json({
+    renewed:         true,
+    dealId,
+    txHash,                                          // Filecoin TX
+    paymentTxHash:   req.headers.get('x-payment-tx') ?? '',  // Base TX (from x402)
+    actualCostUsdc:  '0.25',
+    newExpiryEpoch:  deal.endEpoch + 518_400,        // ~6 more months
+    newExpiryDate:   new Date(Date.now() + 518_400 * 30_000).toISOString(),
+    filfoxUrl:       `https://calibration.filfox.info/en/tx/${txHash}`,
+    lighthouseJobId,
+  })
+}
+```
+
+### `app/api/autopilot/route.ts` — x402-gated registration
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+
+export const runtime = 'nodejs'
+
+export async function POST(req: NextRequest) {
+  const body = await req.json()
+  const { dealId, renewWhenEpochsLeft = 100_000, maxPriceUsdc = 1.00, webhookUrl } = body
+
+  const registration = await prisma.autopilot.upsert({
+    where:  { dealId },
+    update: { renewWhenEpochsLeft, maxPriceUsdc, webhookUrl, active: true },
+    create: { dealId, renewWhenEpochsLeft, maxPriceUsdc, webhookUrl, active: true },
+  })
+
+  return NextResponse.json({
+    autopilotId:      registration.id,
+    dealId,
+    monitoringActive: true,
+    nextCheckAt:      new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+  })
+}
+```
+
+### `app/api/cron/route.ts` — Called by Vercel Cron
+
+This is the monitoring loop. Vercel calls it on schedule. Secured with `CRON_SECRET`
+so nobody else can trigger it.
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { getDealFromChain } from '@/lib/filecoin'
+import { submitRaaS } from '@/lib/lighthouse'
+import { recordRenewal } from '@/lib/storkeep-registry'
+
+export const runtime = 'nodejs'
+export const maxDuration = 300  // 5 minutes — Vercel Pro; 60s on Hobby
+
+export async function GET(req: NextRequest) {
+  // Verify this is Vercel calling (not a random person)
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const registrations = await prisma.autopilot.findMany({
+    where: { active: true },
+  })
+
+  const results = []
+
+  for (const reg of registrations) {
+    try {
+      const deal = await getDealFromChain(reg.dealId)
+
+      if (deal.epochsUntilExpiry < reg.renewWhenEpochsLeft) {
+        // Trigger renewal (internal — no x402 charge here)
+        const { lighthouseJobId, txHash } = await submitRaaS(deal.pieceCid)
+        await recordRenewal({ dealId: reg.dealId, pieceCid: deal.pieceCid, lighthouseJobId })
+
+        // Log renewal to DB
+        await prisma.renewalHistory.create({
+          data: {
+            dealId:         reg.dealId,
+            txHash,
+            lighthouseJobId,
+            epochAtRenewal: deal.currentEpoch,
+          },
+        })
+
+        // Fire webhook if configured
+        if (reg.webhookUrl) {
+          await fetch(reg.webhookUrl, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              event:    'deal.renewed',
+              dealId:   reg.dealId,
+              txHash,
+              timestamp: new Date().toISOString(),
+            }),
+          }).catch(() => {})  // Don't fail cron if webhook fails
+        }
+
+        results.push({ dealId: reg.dealId, renewed: true, txHash })
+      }
+    } catch (e: any) {
+      results.push({ dealId: reg.dealId, renewed: false, error: e.message })
+    }
+  }
+
+  return NextResponse.json({ processed: registrations.length, results })
+}
+```
+
+---
+
+## `vercel.json` — The Cron Schedule
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
+```
+
+That's it. Vercel calls `/api/cron` every 6 hours. The handler checks the `CRON_SECRET`
+header that Vercel automatically includes.
+
+**Hobby plan limitation:** 1 cron job, runs max once per day on free tier, unlimited on Pro.
+For the hackathon demo, manually trigger via `curl` with the secret if needed.
+
+> If you need more frequent checks, use [Trigger.dev](https://trigger.dev) (free tier)
+> or [Inngest](https://inngest.com) — both call Next.js API routes on schedule with no
+> always-on server needed.
+
+---
+
+## `prisma/schema.prisma`
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")      // Vercel Postgres connection string
+  directUrl = env("POSTGRES_URL_NON_POOLING") // For migrations
+}
+
+model Autopilot {
+  id                  String   @id @default(cuid())
+  dealId              String   @unique
+  renewWhenEpochsLeft Int      @default(100000)
+  maxPriceUsdc        Float    @default(1.00)
+  webhookUrl          String?
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  renewals RenewalHistory[]
+}
+
+model RenewalHistory {
+  id              String    @id @default(cuid())
+  dealId          String
+  txHash          String
+  lighthouseJobId String
+  epochAtRenewal  Int
+  createdAt       DateTime  @default(now())
+
+  autopilot Autopilot @relation(fields: [dealId], references: [dealId])
+}
+```
+
+---
+
+## `lib/filecoin.ts` — Chain Queries
+
+```typescript
+// Verified: Filecoin.StateMarketStorageDeal via Glif JSON-RPC
+// Source: https://lotus.filecoin.io/lotus/developers/glif-nodes/
+
+const GLIF_RPC = process.env.FILECOIN_RPC_URL!
+
+export async function getDealFromChain(dealId: string) {
+  const [dealRes, headRes] = await Promise.all([
+    fetch(GLIF_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'Filecoin.StateMarketStorageDeal',
+        params: [parseInt(dealId), null],
+      }),
+    }),
+    fetch(GLIF_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 2, method: 'Filecoin.ChainHead', params: [],
+      }),
+    }),
+  ])
+
+  const [dealData, headData] = await Promise.all([dealRes.json(), headRes.json()])
+
+  if (dealData.error) throw new Error(`Deal ${dealId} not found`)
+
+  const proposal = dealData.result.Proposal
+  const currentEpoch = headData.result.Height
+
+  const epochsUntilExpiry = proposal.EndEpoch - currentEpoch
+
+  return {
+    dealId,
+    pieceCid:          proposal.PieceCID['/'],
+    clientAddress:     proposal.Client,
+    providerMinerId:   proposal.Provider,
+    startEpoch:        proposal.StartEpoch,
+    endEpoch:          proposal.EndEpoch,
+    currentEpoch,
+    epochsUntilExpiry,
+    daysUntilExpiry:   epochsUntilExpiry / 2880,
+    needsRenewal:      epochsUntilExpiry < 100_000,
+    renewalCostUsdc:   '0.25',
+    status:            epochsUntilExpiry <= 0
+      ? 'expired'
+      : epochsUntilExpiry < 100_000
+        ? 'expiring'
+        : 'active',
+  }
+}
+```
+
+---
+
+## `.env.example` — Every Variable Documented
+
+```bash
+# ── Filecoin ──────────────────────────────────────────────────────────────────
+# Calibration testnet RPC (free, public)
+FILECOIN_RPC_URL=https://api.calibration.node.glif.io/rpc/v1
+
+# Your deployed StorKeepRegistry.sol contract address
+# Deploy with fevm-hardhat-kit, then paste address here
+STORKEEP_REGISTRY_CONTRACT=0x_YOUR_DEPLOYED_ADDRESS
+
+# Your wallet private key — used to call Filecoin contracts (server-side only)
+# This wallet needs tFIL on Calibration for gas
+FILECOIN_WALLET_PRIVATE_KEY=0x_YOUR_PRIVATE_KEY
+
+# ── Lighthouse RaaS ───────────────────────────────────────────────────────────
+# Lighthouse deployed RaaS contract (Calibration) — do NOT change
+LIGHTHOUSE_RAAS_CONTRACT=0x4015c3E5453d38Df71539C0F7440603C69784d7a
+
+# ── x402 / Coinbase CDP ───────────────────────────────────────────────────────
+# Get from https://docs.cdp.coinbase.com/x402/welcome
+# Free tier: 1,000 tx/month, then $0.001/tx
+CDP_API_KEY_ID=your_cdp_api_key_id
+CDP_API_KEY_SECRET=your_cdp_api_key_secret
+
+# Wallet address that RECEIVES the USDC payments
+# This is a Base Sepolia address — import into MetaMask to verify receipt
+STORKEEP_WALLET_ADDRESS=0x_YOUR_RECEIVING_WALLET
+
+# ── Vercel Cron Security ──────────────────────────────────────────────────────
+# Generate with: openssl rand -hex 32
+# Vercel sends this as Authorization: Bearer <secret> when calling /api/cron
+CRON_SECRET=your_random_32_char_secret
+
+# ── Database (Vercel Postgres) ────────────────────────────────────────────────
+# These are auto-populated when you add Vercel Postgres in the dashboard
+# Go to: Vercel Dashboard > Storage > Create Database > Postgres
+POSTGRES_PRISMA_URL=postgresql://...
+POSTGRES_URL_NON_POOLING=postgresql://...
+
+# ── Next.js ───────────────────────────────────────────────────────────────────
+NEXTAUTH_SECRET=your_nextauth_secret  # only if you add auth later
+NEXT_PUBLIC_APP_URL=https://storkeep.vercel.app
+```
+
+---
+
+## Deploy Checklist
+
+### Step 1: Set up Vercel Postgres
+
+1. Push repo to GitHub
+2. Import to Vercel
+3. Go to **Storage** tab → **Create Database** → **Postgres** (free hobby tier)
+4. Vercel auto-injects `POSTGRES_PRISMA_URL` and `POSTGRES_URL_NON_POOLING` into env
+
+### Step 2: Run migrations
+
+```bash
+npx prisma migrate deploy
+```
+
+### Step 3: Add remaining env vars in Vercel dashboard
+
+Copy everything from `.env.example`, fill in values, paste into **Settings → Environment Variables**.
+
+### Step 4: Deploy
+
+```bash
+vercel --prod
+```
+
+Done. The cron starts automatically. The x402 middleware is live.
+
+---
+
+## Local Development
+
+```bash
+# Install
+npm install
+
+# Set up local DB (uses SQLite locally, Postgres on Vercel)
+# For local dev only — swap back to Postgres before deploying
+cp .env.example .env.local
+# Edit: set FILECOIN_RPC_URL, CDP_API_KEY_ID, etc.
+
+# Run migrations
+npx prisma migrate dev
+
+# Start
+npm run dev
+
+# Test the cron manually (Vercel doesn't run cron locally)
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron
+```
+
+**Note on local SQLite:** For local dev only you can use SQLite by setting
+`provider = "sqlite"` in schema.prisma and `DATABASE_URL=file:./dev.db`. Switch back
+to `postgresql` before deploying. Do NOT commit `dev.db`.
+
+---
+
+## Why Next.js Wins Over NestJS for This Hackathon
+
+| Concern | NestJS + Railway | Next.js + Vercel |
+|---------|-----------------|-----------------|
+| Deploy complexity | Two services to deploy | `vercel --prod` once |
+| Cron jobs | `node-cron` (always-on server) | `vercel.json` + one API route |
+| Database | SQLite (works) | Vercel Postgres (one click, free) |
+| Frontend | Separate React app or none | Built-in App Router |
+| x402 integration | `@x402/express` | `x402-next` (same API, simpler) |
+| Cold starts | No cold starts | Serverless cold starts (fine for demo) |
+| Cost at hackathon | Railway free tier limits | Vercel Hobby is genuinely free |
+| Time to deploy | ~30 min setup | ~5 min |
+
+The one trade-off: Vercel Hobby cron runs at most daily. For the demo, manually
+trigger the cron endpoint — it's just a `curl`. For real usage, upgrade to Vercel Pro
+($20/month) or use Trigger.dev free tier.
+
+---
+
+## The Full `package.json`
+
+```json
+{
+  "name": "storkeep",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev":             "next dev",
+    "build":           "prisma generate && next build",
+    "start":           "next start",
+    "postinstall":     "prisma generate"
+  },
+  "dependencies": {
+    "@coinbase/x402":       "^1.0.0",
+    "@prisma/client":       "^5.0.0",
+    "next":                 "^14.0.0",
+    "react":                "^18.0.0",
+    "react-dom":            "^18.0.0",
+    "viem":                 "^2.0.0",
+    "x402-next":            "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node":    "^20.0.0",
+    "@types/react":   "^18.0.0",
+    "prisma":         "^5.0.0",
+    "typescript":     "^5.0.0"
+  }
+}
+```
+
+---
+
+*StorKeep · Next.js Architecture · v1.1 · March 2026*

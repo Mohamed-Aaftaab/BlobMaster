@@ -1,0 +1,44 @@
+{
+  "name": "blobmaster-sdk",
+  "version": "0.1.0",
+  "description": "BlobMaster SDK — Filecoin deal renewal (x402) plus Agent Vault agent runtime (Synapse, Filecoin Pin)",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "filecoin",
+    "fvm",
+    "x402",
+    "storage",
+    "renewal",
+    "sdk"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@mysten/sui.js": "^0.54.1",
+    "@x402/core": "^2.0.0",
+    "@x402/evm": "^2.0.0",
+    "@x402/fetch": "^2.0.0"
+  },
+  "peerDependencies": {
+    "viem": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "viem": "^2.0.0"
+  }
+}

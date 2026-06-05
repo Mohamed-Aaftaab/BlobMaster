@@ -1,0 +1,946 @@
+---
+title: "AgentVault — Autonomous Agent Economy on Filecoin"
+description: "Track 1 (Agent Storage SDK) + Track 4 (Autonomous Agent Economy) · Full PRD with Neural Network Dashboard"
+version: "1.0"
+tracks: "Track 1 + Track 4"
+status: "Hackathon Build · March 2026"
+---
+
+# AgentVault
+## Autonomous Agent Economy on Filecoin · Tracks 1 + 4
+**PRD v1.0 · March 2026**
+
+---
+
+## The 3-Line Pitch
+
+**AgentVault** gives AI agents a complete economic life on Filecoin — they store data, earn from it, and die when their budget runs out.
+
+Watch it live: a neural network of agents pulses across your screen, edges light up when USDFC flows, nodes dim and disappear when agents go broke.
+
+The dashboard is not decoration — it is the proof that autonomous agent economies work onchain.
+
+---
+
+## Why Track 1 + Track 4 Together
+
+| Alone | Together |
+|-------|---------|
+| Track 1: "Here's an SDK" — judges have seen a thousand SDKs | The SDK is the engine. The economy is the proof the engine works. |
+| Track 4: "Here's a demo" — no reusable artifact | Same codebase. Judges for Track 1 see clean API + docs. Judges for Track 4 see agents living and dying in real time. |
+
+**Submit to both tracks. One repo. Explicitly state it in the README.**
+
+---
+
+## Table of Contents
+
+1. [The Neural Network Dashboard — Center of Everything](#1-the-neural-network-dashboard)
+2. [What Each Agent Type Does](#2-agent-types)
+3. [The SDK — storkeep-sdk](#3-the-sdk)
+4. [Backend + Smart Contracts](#4-backend--contracts)
+5. [How Synapse SDK + Filecoin Pin Are Used](#5-synapse-sdk--filecoin-pin-usage)
+6. [Project Structure](#6-project-structure)
+7. [The Demo Script — 4 Minutes](#7-demo-script)
+8. [48-Hour Build Plan](#8-48-hour-build-plan)
+9. [.env.example — Every Variable](#9-enveexample)
+10. [Judging Criteria Alignment](#10-judging-criteria-alignment)
+
+---
+
+## 1. The Neural Network Dashboard
+
+This is the centrepiece. Not a sidebar. Not an afterthought.
+**The entire screen is the agent network.**
+
+### 1.1 What It Looks Like
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  AGENTVAULT                              ● LIVE  Calibration Testnet │
+│                                                                      │
+│         ◉ Producer-3                                                 │
+│        /│\          \                                                │
+│       / │ \          ◉ Consumer-2 ████████████ 67% budget           │
+│      /  │  \        /                                               │
+│  ◉--+   │   +--◉ Filecoin                                           │
+│  P1 │   │   │  Storage ◉                                            │
+│     │   ◉   │     \                                                 │
+│     │  P2   │      ◉ Guardian-1                                     │
+│     │       │                                                       │
+│     ◉ Consumer-1 ██████░░░░ 31% — CRITICAL                         │
+│                                                                      │
+│  ─────────────────────────────────────────────────── TX FEED ──── │
+│  12:04:22  Consumer-1 → Producer-2   0.003 USDFC  [retrieve]       │
+│  12:04:19  Guardian-1 → Filecoin     0.012 USDFC  [re-pin bafyr…] │
+│  12:04:15  Producer-3 → Filecoin     0.008 USDFC  [store dataset] │
+│                                                                      │
+│  Alive: 7    Dead: 2    Total USDFC Moved: 1.847    Epoch: 1284920 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 The Neural Network Metaphor — Exact Visual Spec
+
+**Library:** `react-force-graph-2d` (npm: `react-force-graph-2d`, 26k downloads/week, MIT)
+WebGL-accelerated canvas rendering. Supports live node/link updates via mutable graphData refs.
+
+**Node types and visual encoding:**
+
+| Agent Type | Shape | Base Color | Size Rule | Pulse |
+|-----------|-------|-----------|-----------|-------|
+| Producer | Circle | `#00ff88` — electric green | Grows as stored data increases | Pulses when earning |
+| Consumer | Circle | `#4488ff` — cobalt | Shrinks as budget depletes | Pulses when paying |
+| Guardian | Diamond (custom canvas) | `#ff8800` — amber | Fixed | Pulses when re-pinning |
+| Filecoin Node | Hexagon (custom canvas) | `#0090ff` — Filecoin blue | Fixed, large, center gravity | Steady slow pulse |
+| Dead agent | Circle | `#333333` — dim gray | Final size frozen | No pulse — fades to ghost |
+
+**Node size formula for Consumers:**
+```
+radius = 6 + (budgetRemaining / budgetTotal) * 14
+// Full budget → radius 20px. Zero budget → radius 6px. Dead → radius 4px, grey.
+```
+
+**Edge types and visual encoding:**
+
+| Transaction Type | Color | Animation |
+|----------------|-------|-----------|
+| Agent → Filecoin (store) | `#00ff88` green | Flowing particle along edge toward Filecoin |
+| Agent → Agent (retrieve payment) | `#4488ff` blue | Flowing particle from Consumer to Producer |
+| Guardian → Filecoin (re-pin) | `#ff8800` amber | Pulsing dashed line |
+| Budget warning | `#ff4444` red | Edge turns red, node border flashes |
+| Agent death | All edges | Simultaneously fade to `#333` over 2 seconds |
+
+**The Filecoin storage node:**
+Center-gravity attractor. All agents orbit it. Drawn as a large hexagon with `#0090ff` fill, `filecoin.cloud` branded glow ring. When any storage operation happens, the glow intensifies for 1.5 seconds.
+
+### 1.3 How It Updates — SSE, Not WebSocket
+
+Vercel doesn't support persistent WebSocket connections in serverless functions. Use **Server-Sent Events (SSE)** — perfectly suited for one-way server→client streaming, works natively in Next.js route handlers.
+
+```typescript
+// app/api/events/route.ts — SSE endpoint
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (event: AgentEvent) => {
+        controller.enqueue(
+          `data: ${JSON.stringify(event)}\n\n`
+        )
+      }
+
+      // Subscribe to event bus
+      eventBus.on('agent:store',    send)
+      eventBus.on('agent:retrieve', send)
+      eventBus.on('agent:pay',      send)
+      eventBus.on('agent:died',     send)
+      eventBus.on('agent:repin',    send)
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection':    'keep-alive',
+    },
+  })
+}
+```
+
+**Client hook:**
+```typescript
+// hooks/useAgentEvents.ts
+export function useAgentEvents(onEvent: (e: AgentEvent) => void) {
+  useEffect(() => {
+    const es = new EventSource('/api/events')
+    es.onmessage = (msg) => onEvent(JSON.parse(msg.data))
+    return () => es.close()
+  }, [])
+}
+```
+
+### 1.4 The Graph Component — Exact Code Structure
+
+```tsx
+// components/AgentNetwork.tsx
+'use client'
+import { useCallback, useRef, useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
+import { useAgentEvents } from '@/hooks/useAgentEvents'
+
+// Must be dynamic — react-force-graph uses browser APIs
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
+  ssr: false,
+})
+
+interface AgentNode {
+  id:            string    // 'producer-1', 'consumer-3', 'filecoin'
+  type:          'producer' | 'consumer' | 'guardian' | 'filecoin'
+  label:         string
+  budget:        number    // current USDFC
+  budgetTotal:   number    // starting USDFC
+  stored:        number    // bytes stored on Filecoin
+  alive:         boolean
+  pulsing:       boolean   // true for 1.5s after a transaction
+  val:           number    // node size — d3 uses this
+}
+
+interface AgentLink {
+  source:  string
+  target:  string
+  type:    'store' | 'retrieve' | 'repin' | 'warning'
+  active:  boolean  // true for 2s during a transaction
+  amount:  number   // USDFC
+}
+
+export function AgentNetwork() {
+  const graphRef = useRef<any>(null)
+  const [graphData, setGraphData] = useState<{
+    nodes: AgentNode[]
+    links: AgentLink[]
+  }>({ nodes: [], links: [] })
+
+  // Listen to SSE events and mutate graph
+  useAgentEvents((event) => {
+    setGraphData(prev => {
+      const next = structuredClone(prev)
+
+      switch (event.type) {
+        case 'agent:pay': {
+          // Flash the link
+          const link = next.links.find(
+            l => l.source === event.from && l.target === event.to
+          )
+          if (link) { link.active = true }
+
+          // Shrink consumer node
+          const consumer = next.nodes.find(n => n.id === event.from)
+          if (consumer) {
+            consumer.budget -= event.amount
+            consumer.val = 6 + (consumer.budget / consumer.budgetTotal) * 14
+            consumer.pulsing = true
+          }
+
+          // Pulse producer
+          const producer = next.nodes.find(n => n.id === event.to)
+          if (producer) { producer.pulsing = true }
+
+          setTimeout(() => {
+            setGraphData(g => {
+              const updated = structuredClone(g)
+              const l = updated.links.find(l => l.source === event.from && l.target === event.to)
+              if (l) l.active = false
+              const p = updated.nodes.find(n => n.id === event.from)
+              if (p) p.pulsing = false
+              return updated
+            })
+          }, 2000)
+          break
+        }
+
+        case 'agent:died': {
+          const node = next.nodes.find(n => n.id === event.agentId)
+          if (node) {
+            node.alive   = false
+            node.pulsing = false
+            node.val     = 4
+          }
+          // Fade all links to dead node
+          next.links.forEach(l => {
+            if (l.source === event.agentId || l.target === event.agentId) {
+              l.active = false
+            }
+          })
+          break
+        }
+
+        case 'agent:store': {
+          const producer = next.nodes.find(n => n.id === event.agentId)
+          if (producer) {
+            producer.stored += event.bytes
+            producer.val = Math.min(20, producer.val + 1)
+            producer.pulsing = true
+          }
+          break
+        }
+      }
+
+      return next
+    })
+  })
+
+  // Custom node painter — this is where the visual magic lives
+  const paintNode = useCallback((node: AgentNode, ctx: CanvasRenderingContext2D, scale: number) => {
+    const r = node.val ?? 8
+    const x = node.x ?? 0
+    const y = node.y ?? 0
+
+    // Glow effect for alive nodes
+    if (node.alive && node.pulsing) {
+      ctx.shadowBlur  = 20
+      ctx.shadowColor = nodeColor(node.type)
+    } else {
+      ctx.shadowBlur = 0
+    }
+
+    // Draw shape based on type
+    ctx.beginPath()
+    if (node.type === 'filecoin') {
+      drawHexagon(ctx, x, y, r + 4)
+      ctx.fillStyle = '#0090ff'
+    } else if (node.type === 'guardian') {
+      drawDiamond(ctx, x, y, r)
+      ctx.fillStyle = node.alive ? '#ff8800' : '#333'
+    } else {
+      ctx.arc(x, y, r, 0, 2 * Math.PI)
+      ctx.fillStyle = node.alive ? nodeColor(node.type) : '#333'
+    }
+    ctx.fill()
+
+    // Budget ring for consumers
+    if (node.type === 'consumer' && node.alive) {
+      const pct = node.budget / node.budgetTotal
+      ctx.beginPath()
+      ctx.arc(x, y, r + 2, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * pct)
+      ctx.strokeStyle = pct < 0.2 ? '#ff4444' : '#4488ff'
+      ctx.lineWidth   = 2
+      ctx.stroke()
+    }
+
+    // Label
+    ctx.fillStyle   = node.alive ? '#ffffff' : '#555'
+    ctx.font        = `${Math.max(4, 8 / scale)}px "JetBrains Mono", monospace`
+    ctx.textAlign   = 'center'
+    ctx.fillText(node.label, x, y + r + 8 / scale)
+
+    ctx.shadowBlur = 0
+  }, [])
+
+  // Custom link painter — flowing particles
+  const paintLink = useCallback((link: AgentLink, ctx: CanvasRenderingContext2D) => {
+    if (!link.active) {
+      ctx.strokeStyle = '#ffffff10'
+      ctx.lineWidth   = 0.5
+    } else {
+      ctx.strokeStyle = linkColor(link.type)
+      ctx.lineWidth   = 1.5
+    }
+  }, [])
+
+  return (
+    <div className="w-full h-full bg-[#080c14]">
+      <ForceGraph2D
+        ref={graphRef}
+        graphData={graphData}
+        nodeCanvasObject={paintNode}
+        linkCanvasObject={paintLink}
+        nodeCanvasObjectMode={() => 'replace'}
+        linkCanvasObjectMode={() => 'replace'}
+        backgroundColor="#080c14"
+        linkDirectionalParticles={(link) => link.active ? 4 : 0}
+        linkDirectionalParticleWidth={2}
+        linkDirectionalParticleColor={(link) => linkColor(link.type as any)}
+        enableNodeDrag={true}
+        enableZoomInteraction={true}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.3}
+        onNodeClick={(node) => {
+          // Zoom to clicked agent — show detail panel
+        }}
+      />
+    </div>
+  )
+}
+
+// Helpers
+function nodeColor(type: string): string {
+  return { producer: '#00ff88', consumer: '#4488ff', guardian: '#ff8800', filecoin: '#0090ff' }[type] ?? '#888'
+}
+function linkColor(type: string): string {
+  return { store: '#00ff88', retrieve: '#4488ff', repin: '#ff8800', warning: '#ff4444' }[type] ?? '#fff'
+}
+function drawHexagon(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 6
+    i === 0 ? ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a))
+             : ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a))
+  }
+  ctx.closePath()
+}
+function drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.moveTo(x, y - r)
+  ctx.lineTo(x + r, y)
+  ctx.lineTo(x, y + r)
+  ctx.lineTo(x - r, y)
+  ctx.closePath()
+}
+```
+
+### 1.5 The Dashboard Layout — Full Page
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ AGENTVAULT              [▶ START ECONOMY]  ● LIVE  Epoch: 1,284,920  │
+├──────────────────────────────────────────────────────────┬───────────┤
+│                                                           │ STATS     │
+│                                                           │ ─────── │
+│              LIVE AGENT NETWORK                           │ Alive   7 │
+│         (react-force-graph-2d full canvas)                │ Dead    2 │
+│                                                           │ USDFC   ↕ │
+│              nodes orbit Filecoin node                    │ 1.847    │
+│              edges pulse during transactions              │          │
+│              dead agents dim to grey ghosts               │ Storage  │
+│                                                           │ 94.3 MiB │
+│                                                           │          │
+│                                                           │ TX/min  │
+│                                                           │ 3.2      │
+│                                                           ├───────────┤
+│                                                           │ AGENT    │
+│                                                           │ PANEL    │
+├──────────────────────────────────────────────────────────┤ (click   │
+│ TX FEED (latest 20 transactions, auto-scroll)             │  a node) │
+│ 12:04:22  Consumer-1 → Producer-2   0.003 USDFC [get]   │          │
+│ 12:04:19  Guardian-1 re-pinned bafyr...  0.012 USDFC     │          │
+└──────────────────────────────────────────────────────────┴───────────┘
+```
+
+**Click a node → Agent Detail Panel slides in (right side):**
+```
+Producer-2
+──────────────
+Type:     Producer
+Budget:   0.87 USDFC
+Stored:   34.2 MiB  (2 datasets)
+Earned:   0.041 USDFC from 14 retrievals
+CIDs:     bafyrei... [→ Filecoin Pin]
+          bafyrkj... [→ Filecoin Pin]
+Status:   ✅ Alive
+Last TX:  12:04:22 (23s ago)
+Filfox:   [→ view onchain]
+```
+
+### 1.6 The Visual Aesthetic — Design Decision
+
+**Dark neural network. High contrast. Green/blue/amber on near-black.**
+
+- Background: `#080c14` — almost black, slight blue tint (not pure black — it reads as "space", not "broken")
+- Font: `JetBrains Mono` — monospace throughout. Terminal energy. Every number looks exact.
+- No rounded cards. No shadows. No gradients. Raw edges. Data first.
+- The graph is 75% of the screen. Everything else is secondary.
+- Dead agents don't disappear — they become **grey ghosts** that stay in the graph. The network remembers who died.
+
+---
+
+## 2. Agent Types
+
+### Producer Agent
+**Goal:** Store datasets on Filecoin via Synapse SDK. Earn USDFC when others retrieve their data.
+
+```typescript
+// agents/producer.ts
+import { AgentVault } from 'storkeep-sdk'
+
+async function runProducer(vault: AgentVault) {
+  // Generate a synthetic dataset (structured JSON)
+  const dataset = generateDataset()
+
+  // Store on Filecoin via Synapse SDK
+  const { cid } = await vault.store(dataset, {
+    ttl:        '30d',
+    redundancy: 2,
+    tag:        'producer-dataset',
+  })
+
+  // Announce availability to the economy (write to onchain registry)
+  await vault.announce(cid, { pricePerRetrieve: '0.003' })  // USDFC
+
+  // Collect revenue every cycle
+  while (vault.isAlive()) {
+    await sleep(CYCLE_MS)
+    const earnings = await vault.collectRevenue()
+    console.log(`Earned ${earnings} USDFC`)
+  }
+}
+```
+
+### Consumer Agent
+**Goal:** Retrieve datasets from Producers. Pay per retrieval. Die when budget hits zero.
+
+```typescript
+// agents/consumer.ts
+async function runConsumer(vault: AgentVault) {
+  while (vault.isAlive()) {
+    const available = await vault.discover()      // find datasets onchain
+    const cheapest  = available.sort((a,b) => a.price - b.price)[0]
+
+    if (cheapest && await vault.canAfford(cheapest.price)) {
+      const data = await vault.retrieve(cheapest.cid)  // Synapse SDK download
+      // payment flows automatically — vault.retrieve() handles USDFC transfer
+    }
+
+    await sleep(CYCLE_MS)
+  }
+  // vault.isAlive() returns false when budget < MIN_BALANCE
+  // triggers onchain "death" event + prune all stored data
+}
+```
+
+### Guardian Agent
+**Goal:** Watch CIDs for availability. Re-pin dark data to Filecoin Pin. Charge a fee.
+
+```typescript
+// agents/guardian.ts
+async function runGuardian(vault: AgentVault) {
+  const watched = await vault.getWatchList()      // CIDs from the registry
+
+  while (vault.isAlive()) {
+    for (const cid of watched) {
+      const alive = await vault.checkAvailability(cid)  // IPFS gateway check
+
+      if (!alive) {
+        // Re-pin via Filecoin Pin
+        await vault.repin(cid)
+        // Charge the CID's registered owner
+        await vault.chargeRescue(cid, RESCUE_FEE)
+        emit('agent:repin', { agentId: vault.id, cid })
+      }
+    }
+    await sleep(GUARDIAN_CYCLE_MS)
+  }
+}
+```
+
+---
+
+## 3. The SDK — `storkeep-sdk`
+
+### Install
+
+```bash
+npm install storkeep-sdk
+```
+
+### Full API (Track 1 Deliverables Met)
+
+```typescript
+import { AgentVault } from 'storkeep-sdk'
+
+const vault = new AgentVault({
+  wallet:      agentWallet,        // any EVM wallet / AgentKit
+  budget:      '10',               // USDFC starting budget
+  network:     'calibration',
+  agentType:   'producer',         // 'producer' | 'consumer' | 'guardian'
+  policies: {
+    maxCostPerStore:    '0.05',     // USDFC — reject if Synapse quotes higher
+    minRedundancy:      2,          // always 2-copy replication
+    defaultTTL:         '30d',
+    pruneWhenBudgetPct: 10,         // prune data when budget < 10%
+  },
+})
+
+// ── Core lifecycle ──────────────────────────────────────────────────
+await vault.store(data, options?)        // Synapse SDK upload → returns CID
+await vault.retrieve(cid)               // Synapse SDK download → returns data
+await vault.renew(cid)                  // extend storage deal
+await vault.prune(cid)                  // delete, recover budget
+await vault.pruneAll()                  // prune everything — called on death
+
+// ── Agent economy ───────────────────────────────────────────────────
+await vault.announce(cid, pricing)      // list dataset for sale in registry
+await vault.discover()                  // find available datasets onchain
+await vault.canAfford(price)            // budget check
+await vault.collectRevenue()            // sweep incoming USDFC
+await vault.chargeRescue(cid, fee)      // Guardian charges owner for re-pin
+
+// ── Availability ────────────────────────────────────────────────────
+await vault.checkAvailability(cid)      // ping IPFS gateways → boolean
+await vault.repin(cid)                  // Filecoin Pin re-pin for dark data
+await vault.getWatchList()             // CIDs this guardian is watching
+
+// ── Budget management ────────────────────────────────────────────────
+await vault.getBudget()                 // { remaining, total, percentUsed }
+vault.isAlive()                         // false when remaining < MIN_BALANCE
+await vault.die()                       // pruneAll() + emit death event onchain
+
+// ── Wallet abstraction (Track 1 requirement) ─────────────────────────
+vault.wallet.balance()                  // USDFC on Base / Calibration
+vault.wallet.fund(amount)               // top up from any source
+```
+
+### Default Storage Policies (Track 1 requirement)
+
+```typescript
+// src/policies.ts — exported, overridable
+export const DEFAULT_POLICIES: StoragePolicies = {
+  maxCostPerStoreUsdfc:  0.10,     // never pay more than this for one upload
+  minRedundancy:         2,        // 2-copy replication via Synapse SDK
+  defaultTTLDays:        30,       // auto-renew at 25 days remaining
+  pruneWhenBudgetPct:    10,       // prune oldest data to free budget
+  maxStoredBytes:        100_000_000,  // 100 MB per agent by default
+  retryOnFailure:        3,        // retry failed Synapse calls
+}
+```
+
+---
+
+## 4. Backend + Contracts
+
+### Onchain Budget Contract — `AgentBudget.sol`
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+/// @title AgentBudget — Onchain budget enforcement for Track 4
+/// @notice Agents register with a starting budget. Budget decreases with
+///         each verified action. At zero, agent is marked dead.
+contract AgentBudget {
+
+  enum AgentType  { Producer, Consumer, Guardian }
+  enum AgentState { Alive, Critical, Dead }
+
+  struct Agent {
+    address     wallet;
+    AgentType   agentType;
+    AgentState  state;
+    uint256     budgetUsdfc;   // in 6-decimal USDFC units
+    uint256     budgetTotal;
+    uint256     storedBytes;
+    uint256     txCount;
+    uint256     bornAt;        // block.timestamp
+    uint256     diedAt;        // 0 if alive
+    string[]    activeCIDs;
+  }
+
+  mapping(string => Agent) public agents;  // agentId => Agent
+  string[] public agentIds;
+  uint256  public totalUsdcMoved;
+
+  event AgentRegistered(string indexed agentId, AgentType agentType, uint256 budget);
+  event BudgetCharged  (string indexed agentId, uint256 amount, string reason);
+  event AgentDied      (string indexed agentId, uint256 finalBalance, uint256 lifetime);
+  event DataStored     (string indexed agentId, string cid, uint256 bytes_);
+  event DataPruned     (string indexed agentId, string cid);
+  event RevenueCollected(string indexed agentId, uint256 amount);
+
+  function register(string calldata agentId, AgentType t, uint256 budgetUsdfc) external {
+    agents[agentId] = Agent({
+      wallet: msg.sender, agentType: t, state: AgentState.Alive,
+      budgetUsdfc: budgetUsdfc, budgetTotal: budgetUsdfc,
+      storedBytes: 0, txCount: 0, bornAt: block.timestamp, diedAt: 0,
+      activeCIDs: new string[](0)
+    });
+    agentIds.push(agentId);
+    emit AgentRegistered(agentId, t, budgetUsdfc);
+  }
+
+  function charge(string calldata agentId, uint256 amount, string calldata reason) external {
+    Agent storage a = agents[agentId];
+    require(a.state == AgentState.Alive, "Agent is dead");
+    a.budgetUsdfc -= amount;
+    a.txCount++;
+    totalUsdcMoved += amount;
+
+    if (a.budgetUsdfc == 0) {
+      a.state  = AgentState.Dead;
+      a.diedAt = block.timestamp;
+      emit AgentDied(agentId, 0, block.timestamp - a.bornAt);
+    } else if (a.budgetUsdfc * 100 / a.budgetTotal < 20) {
+      a.state = AgentState.Critical;
+    }
+
+    emit BudgetCharged(agentId, amount, reason);
+  }
+
+  function recordStore(string calldata agentId, string calldata cid, uint256 bytes_) external {
+    agents[agentId].activeCIDs.push(cid);
+    agents[agentId].storedBytes += bytes_;
+    emit DataStored(agentId, cid, bytes_);
+  }
+
+  function recordPrune(string calldata agentId, string calldata cid) external {
+    emit DataPruned(agentId, cid);
+  }
+
+  function getAllAgents() external view returns (Agent[] memory) {
+    Agent[] memory result = new Agent[](agentIds.length);
+    for (uint i = 0; i < agentIds.length; i++) result[i] = agents[agentIds[i]];
+    return result;
+  }
+}
+```
+
+### API Routes (Next.js App Router)
+
+```
+GET  /api/agents              — all agent states (polling fallback)
+GET  /api/agents/[id]         — single agent detail
+GET  /api/events              — SSE stream of all economy events
+POST /api/economy/start       — spawn agent cohort, begin simulation
+POST /api/economy/stop        — halt simulation
+GET  /api/stats               — global economy stats
+GET  /api/transactions        — last 50 transactions
+```
+
+---
+
+## 5. Synapse SDK + Filecoin Pin Usage
+
+**This section is critical for judging.** The submission requirement says both must be used meaningfully.
+
+### Synapse SDK — Used For:
+
+```typescript
+import { Synapse } from '@filoz/synapse-sdk'
+
+const synapse = new Synapse({ privateKey: agentWallet.privateKey })
+
+// 1. vault.store() — wraps this:
+await synapse.storage.upload(buffer)           // returns commp / CID
+
+// 2. vault.retrieve() — wraps this:
+await synapse.storage.download(commp)          // returns buffer
+
+// 3. vault.renew() — wraps Filecoin Pay continuation:
+await synapse.payments.fund(additional)        // extend payment rail
+
+// 4. vault.prune() — wraps this:
+await synapse.storage.delete(commp)            // free storage
+```
+
+Every storage action by every agent goes through Synapse SDK.
+Every payment (deposit, settlement) goes through Filecoin Pay.
+This is the entire storage and payment layer — not a thin wrapper.
+
+### Filecoin Pin — Used For:
+
+```typescript
+// vault.repin() — Guardian's core function
+// Calls Filecoin Pin CLI / API to rescue dark CIDs
+
+import { exec } from 'child_process'
+
+async function repinCID(cid: string): Promise<void> {
+  // Filecoin Pin CLI (from https://docs.filecoin.io/builder-cookbook/filecoin-pin)
+  await execAsync(`filecoin-pin add ${cid}`)
+  // OR via Filecoin Pin API:
+  await fetch('https://pin.filecoin.cloud/pins', {
+    method:  'POST',
+    headers: { 'Authorization': `Bearer ${process.env.FILECOIN_PIN_TOKEN}` },
+    body:    JSON.stringify({ cid }),
+  })
+}
+```
+
+**The Guardian agent exists specifically to use Filecoin Pin.**
+Without Guardian agents, Filecoin Pin wouldn't be in the demo at all.
+With them, every time a CID goes dark → Guardian detects it → Filecoin Pin rescues it → amber pulse on the graph.
+
+**In the submission README, explicitly state:**
+- Synapse SDK: used in `vault.store()`, `vault.retrieve()`, `vault.renew()`, `vault.prune()`
+- Filecoin Pin: used in `vault.repin()` — called by Guardian agents for CID rescue
+
+---
+
+## 6. Project Structure
+
+One repository: **StorKeep** ships the SDK and the web app together (Agent Vault is the `/economy` experience inside the app, not a second Next.js project).
+
+```
+storkeep/                              ← repo root
+├── storkeep-sdk/                      ← Track 1: npm `storkeep-sdk` (AgentVault, Synapse, Pin)
+│   └── src/
+│       ├── index.ts
+│       └── agent/                     AgentVault.ts, synapse.ts, filecoin-pin.ts, policies.ts, …
+│
+├── storkeep-app/                      ← Track 4: Next.js — StorKeep + Agent Vault at `/economy`
+│   ├── app/
+│   │   ├── page.tsx
+│   │   ├── economy/page.tsx          THE DASHBOARD — full-screen neural network
+│   │   └── api/                      events, agents, economy start/stop, stats, listings, …
+│   ├── next.config.mjs               redirects `/agentvault` → `/economy` (308)
+│   ├── components/                   AgentNetwork, TxFeed, AgentPanel, SiteNav, …
+│   ├── agents/                       producer, consumer, guardian, spawner
+│   ├── lib/                          Prisma, event-bus, agent-wallet, …
+│   ├── prisma/
+│   └── vercel.json
+│
+└── storkeep-contracts/contracts/
+    ├── AgentBudget.sol
+    └── StorKeepRegistry.sol
+```
+
+---
+
+## 7. Demo Script — 4 Minutes
+
+### Setup (before demo, invisible)
+
+- 7 agents spawned on Calibration with different budgets
+- 2 agents pre-killed (grey ghosts visible in graph from frame 1)
+- Graph already running and pulsing when you share screen
+
+### The Script
+
+| Time | Action | What Judges See |
+|------|--------|----------------|
+| 0:00–0:20 | Open browser — deployed StorKeep app at `/economy` (e.g. `https://<your-app>.vercel.app/economy`) | Full-screen neural network already live. 7 nodes orbiting Filecoin hexagon. 2 grey ghosts. Edges pulsing. |
+| 0:20–0:45 | Narrate the graph | "Green nodes are Producers — they grow as they store more data. Blue nodes are Consumers — they shrink as they spend. Orange diamonds are Guardians — they watch for dark CIDs. Grey nodes are dead agents — their data pruned, gone." |
+| 0:45–1:15 | Click Consumer-1 (low budget, flashing red ring) | Agent panel slides in: budget 0.003 USDFC, 31% remaining, CRITICAL. Shows CIDs it's purchased, TX history, Filfox link. |
+| 1:15–1:45 | Consumer-1 makes a retrieve — watch it live | Blue particle flows along edge from Consumer to Producer. Consumer node shrinks visibly. Producer node pulses green. TX feed updates: "Consumer-1 → Producer-2  0.003 USDFC". |
+| 1:45–2:15 | Consumer-1 hits zero budget — AGENT DEATH | Node dims to grey, all edges fade simultaneously, "AGENT DIED" event fires in TX feed. Budget ring disappears. Grey ghost stays in graph. Filfox shows `AgentDied` event onchain. |
+| 2:15–2:45 | Guardian detects a dark CID | Amber pulse along edge to Filecoin node. "Guardian-1 re-pinned bafyrei… 0.012 USDFC" in TX feed. Open Filecoin Pin dashboard — CID visible. |
+| 2:45–3:15 | Open terminal — `npm install storkeep-sdk` | Live install. Show 8 lines of code. "This is all it takes to run an agent on Filecoin." |
+| 3:15–4:00 | Show architecture diagram + Filecoin Calibration | Filfox showing live `DataStored`, `BudgetCharged`, `AgentDied` events. BaseScan showing USDFC payments. "Every action. Onchain. Verifiable." |
+
+---
+
+## 8. 48-Hour Build Plan
+
+### Hours 0–4: SDK Skeleton
+
+1. Scaffold `storkeep-sdk` (tsup, `src/agent/*`, publishable package)
+2. All types in `types.ts`
+3. Stub `AgentVault` class — all method signatures, no implementations
+4. `tsup.config.ts` — CJS + ESM + `.d.ts`
+5. `npm run build` — verify types compile
+
+### Hours 4–10: Contracts + Calibration Deploy
+
+1. Scaffold `contracts/AgentBudget.sol` exactly as shown in §4
+2. Deploy with fevm-hardhat-kit to Calibration
+3. Copy contract addresses into env / `lib/storkeep-registry.ts` (or equivalent)
+4. Verify on Filfox Calibration
+
+### Hours 10–20: SDK Core Implementation
+
+1. Implement `vault.store()` — Synapse SDK upload
+2. Implement `vault.retrieve()` — Synapse SDK download
+3. Implement `vault.repin()` — Filecoin Pin API call
+4. Implement `vault.getBudget()`, `vault.isAlive()`, `vault.die()`
+5. Implement `vault.announce()`, `vault.discover()` — write/read from onchain registry
+6. `npm publish storkeep-sdk`
+
+### Hours 20–30: Agent Loops + Backend
+
+1. `agents/producer.ts`, `consumer.ts`, `guardian.ts`
+2. `agents/spawner.ts` — spawn 7 agents with different budgets
+3. `lib/event-bus.ts` — in-process EventEmitter
+4. API routes: `/api/events` (SSE), `/api/agents`, `/api/economy/start`
+5. Vercel Postgres + Prisma for agent state persistence
+6. Deploy to Vercel
+
+### Hours 30–40: The Dashboard
+
+1. Install `react-force-graph-2d`: `npm install react-force-graph-2d`
+2. Build `AgentNetwork.tsx` — custom node + link painters as shown in §1.4
+3. Build `TxFeed.tsx` — auto-scrolling event log
+4. Build `AgentPanel.tsx` — click-to-inspect
+5. Wire SSE hook — graph updates live from server events
+6. Test: spawn economy, watch nodes pulse, kill an agent, watch it die on screen
+
+### Hours 40–44: Pre-seed Demo State
+
+1. Spawn 7 agents with staggered budgets
+2. Pre-kill 2 agents (grey ghosts visible from frame 1)
+3. Run economy for 2 hours — let it generate TX history
+4. Take screenshots for README
+
+### Hours 44–48: Polish + Submission
+
+1. Write `README.md` — architecture diagram, track alignment, Synapse SDK usage section, Filecoin Pin usage section, Calibration contract address
+2. Record 4-minute demo video
+3. GitHub repo public
+4. Submit: production URL `/economy` on your StorKeep deployment
+
+---
+
+## 9. `.env.example`
+
+```bash
+# ── Synapse SDK / Filecoin Onchain Cloud ──────────────────────────────
+# Get from: https://docs.filecoin.cloud/getting-started/
+# Fund with tUSDFC from Calibration faucet
+FILECOIN_PRIVATE_KEY=0x_your_agent_wallet_private_key
+FILECOIN_RPC_URL=https://api.calibration.node.glif.io/rpc/v1
+
+# ── Filecoin Pin ────────────────────────────────────────────────────
+# Get from: https://pin.filecoin.cloud (register for alpha access)
+FILECOIN_PIN_TOKEN=your_filecoin_pin_api_token
+
+# ── AgentBudget.sol ─────────────────────────────────────────────────
+# Deployed by you using fevm-hardhat-kit on Calibration
+AGENT_BUDGET_CONTRACT=0x_deployed_contract_address
+
+# ── Vercel Postgres (auto-injected after adding storage in dashboard)
+POSTGRES_PRISMA_URL=postgresql://...
+POSTGRES_URL_NON_POOLING=postgresql://...
+
+# ── Economy Config ──────────────────────────────────────────────────
+# Starting budgets for demo agents (USDFC, 6 decimals)
+PRODUCER_BUDGET=10
+CONSUMER_BUDGET_LOW=3        # will die fastest — good for demo
+CONSUMER_BUDGET_MED=7
+CONSUMER_BUDGET_HIGH=15
+GUARDIAN_BUDGET=8
+
+CYCLE_MS=8000                # agent action interval (8 seconds)
+GUARDIAN_CYCLE_MS=15000      # guardian check interval
+
+# ── Cron Secret (Vercel calls /api/cron with this) ──────────────────
+# Generate: openssl rand -hex 32
+CRON_SECRET=your_random_secret
+
+# ── App ──────────────────────────────────────────────────────────────
+NEXT_PUBLIC_APP_URL=https://<your-storkeep-deployment>.vercel.app
+```
+
+---
+
+## 10. Judging Criteria Alignment
+
+### Technical Execution — 40%
+
+**Does the project demonstrate quality application development?**
+Yes. Full-stack: Solidity contracts on Calibration, TypeScript SDK with proper CJS/ESM/types output, Next.js App Router with SSE, react-force-graph-2d WebGL canvas rendering.
+
+**Does the project leverage Filecoin Onchain Cloud?**
+Yes — explicitly. Synapse SDK for every storage operation. Filecoin Pin for CID rescue. Both documented with exact function call locations in the README.
+
+**Is the code functional?**
+Live on your deployed StorKeep URL. `npm install storkeep-sdk` works. Agents are running on Calibration. Graph is live at `/economy`.
+
+### Potential Impact — 20%
+
+Autonomous agent economies are the entire point of the hackathon. AgentVault answers the question: "What does it actually look like when agents manage their own data, earn, spend, and die on Filecoin?" It's the reference implementation every future agent project will build on top of.
+
+### Innovation / Wow Factor — 30%
+
+The neural network dashboard where you watch agents live and die in real time is the wow factor. No other team will have this. The graph isn't decorative — it's the primary interface. Dead agent ghosts staying in the graph after death is a specific, memorable design decision that makes the economy feel real and consequential.
+
+### Presentation / Demo — 10%
+
+4-minute demo. Clear problem (agents need storage + economics). Clear solution (SDK + economy). Explicit callouts for Synapse SDK and Filecoin Pin usage. Architecture diagram in README. Contract address on Filfox.
+
+---
+
+## Key Links
+
+| Resource | URL |
+|----------|-----|
+| Synapse SDK docs | [docs.filecoin.cloud/getting-started](https://docs.filecoin.cloud/getting-started/) |
+| Synapse SDK npm | `@filoz/synapse-sdk` |
+| Filecoin Pin docs | [docs.filecoin.io/builder-cookbook/filecoin-pin](https://docs.filecoin.io/builder-cookbook/filecoin-pin) |
+| react-force-graph | [github.com/vasturiano/react-force-graph](https://github.com/vasturiano/react-force-graph) |
+| fevm-hardhat-kit | [github.com/filecoin-project/fevm-hardhat-kit](https://github.com/filecoin-project/fevm-hardhat-kit) |
+| Calibration faucet | [faucet.calibration.fildev.network](https://faucet.calibration.fildev.network) |
+| Filfox Calibration | [calibration.filfox.info](https://calibration.filfox.info) |
+| Glif RPC | `https://api.calibration.node.glif.io/rpc/v1` |
+| AgentKit (Coinbase) | [github.com/coinbase/agentkit](https://github.com/coinbase/agentkit) |
+
+---
+
+*AgentVault · Track 1 (Agent Storage SDK) + Track 4 (Autonomous Agent Economy) · Filecoin Hackathon · March 2026*

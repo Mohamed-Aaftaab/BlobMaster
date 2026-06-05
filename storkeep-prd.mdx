@@ -1,0 +1,1365 @@
+---
+title: "StorKeep SDK — Filecoin Deal Renewal Powered by x402"
+description: "Complete PRD, SDK architecture, implementation guide, and all reference links"
+version: "1.0.0"
+status: "Hackathon Build · March 2026"
+chains: "Filecoin FVM (Calibration testnet) + Base Sepolia (x402 USDC payments)"
+sdk_package: "storkeep-sdk"
+---
+
+# StorKeep SDK
+## Autonomous Filecoin Deal Renewal · Powered by x402 Payments
+**PRD v1.0 · Hackathon Build · March 2026**
+
+---
+
+## The One-Sentence Pitch
+
+Filecoin storage deals expire. StorKeep is the TypeScript SDK that keeps them alive forever — an AI agent deposits USDC once, calls three methods, and every deal auto-renews through [x402](https://x402.org) HTTP-native payments with zero human intervention.
+
+---
+
+## Table of Contents
+
+1. [The Problem — With Real Numbers](#1-the-problem)
+2. [Why x402 Is the Right Payment Layer](#2-why-x402)
+3. [What StorKeep Is](#3-what-storkeep-is)
+4. [SDK Architecture](#4-sdk-architecture)
+5. [Complete API Reference](#5-complete-api-reference)
+6. [The Backend Service](#6-the-backend-service)
+7. [The FVM Smart Contract](#7-the-fvm-smart-contract)
+8. [x402 Integration Deep Dive](#8-x402-integration)
+9. [Build Guide — File by File](#9-build-guide)
+10. [48-Hour Build Plan](#10-48-hour-build-plan)
+11. [The Demo Script](#11-the-demo-script)
+12. [Reference Links](#12-reference-links)
+
+---
+
+## 1. The Problem
+
+### 1.1 Filecoin Foundation's Failing KPI
+
+[Filecoin Foundation's public 2025 KR2](https://fil.org/blog/filecoin-foundation-s-vision-and-strategic-priorities-for-2025):
+
+> **"75% of on-chain deals are renewed before expiring"**
+
+This is a publicly stated, measurable goal. The chain data shows it is failing:
+
+| Quarter | Active Storage | QoQ Change | Root Cause |
+|---------|---------------|-----------|------------|
+| Q4 2024 | 1,500 PiB | — | Baseline |
+| Q1 2025 | 1,300 PiB | **−13%** | Deal expirations outpaced new onboarding |
+| Q2 2025 | 1,100 PiB | **−11%** | "Expirations of prior large contracts removed more capacity than was replaced" |
+| Q3 2025 | 1,110 PiB | −1% | Stabilised on high-value verified enterprise data |
+
+Source: [Messari State of Filecoin Q1](https://messari.io/report/state-of-filecoin-q1-2025) · [Q2](https://messari.io/report/state-of-filecoin-q2-2025) · [Q3 2025](https://messari.io/report/state-of-filecoin-q3-2025)
+
+The Q2 divergence is the clearest proof: [daily new storage deals rose 25% QoQ while total active storage fell 11%](https://messari.io/report/state-of-filecoin-q2-2025). Deals expire faster than they are renewed. This is not a prediction — it is the chain telling you in real numbers.
+
+### 1.2 Why Deals Don't Get Renewed
+
+There are three compounding reasons:
+
+**Reason 1 — No autopilot exists for average developers.**
+The [RaaS (Replication, Renewal and Repair) primitive](https://docs.filecoin.io/smart-contracts/programmatic-storage/raas) was designed for this in FVM, but [RaaS nodes must be self-hosted](https://docs.filecoin.io/smart-contracts/programmatic-storage/raas) and only monitor deals originated through aggregators. Self-hosting means almost nobody runs it.
+
+**Reason 2 — Lighthouse's hosted RaaS has fixed global params.**
+[Lighthouse deployed universal RaaS nodes](https://docs.lighthouse.storage/lighthouse-1/filecoin-first/section-b) on mainnet (`0xd928b92E6028463910b2005d118C2edE16C38a2a`) and Calibration (`0x4015c3E5453d38Df71539C0F7440603C69784d7a`). But the renewal parameters are set globally — you cannot customise thresholds per deal, and it only works for Lighthouse-aggregated CIDs. From [their docs](https://docs.lighthouse.storage/lighthouse-1/filecoin-first/section-b): *"The params for renewal and repair have been decided by lighthouse universally for all deals."*
+
+**Reason 3 — Payment is a manual human step.**
+Even when renewal is triggered, someone must pay in FIL. AI agents, dApps, and automated pipelines — the primary future clients of Filecoin storage — cannot click a MetaMask popup. There is no way to pay for deal renewal programmatically without building custom infrastructure.
+
+**Reason 4 — No developer SDK exists.**
+There is no npm package exposing `renewDeal(dealId)`. Developers who want autopilot storage today must understand RaaS contracts, Lighthouse aggregation, FVM smart contract interactions, and Filecoin JSON-RPC — all at once.
+
+### 1.3 The F5 Gap
+
+[F5 at ETHGlobal](https://ethglobal.com/showcase/f5-p34yq) was a hackathon deal-renewal smart contract. It identified the right problem but had no payment layer, no SDK, no hosted service, no npm package. It was never adopted. StorKeep is what F5 should have become.
+
+### 1.4 The FilOz Signal
+
+At [FDS-7 Buenos Aires (November 2025)](https://filecoin.io/blog/posts/behind-the-scenes-in-buenos-aires-), the Filecoin core team (FilOz) was actively designing **"x402 on Filecoin Pay + Pay-to-Access Retrievals"** — a session presented by Jennifer Wang (FilOz) and Miroslav Bajtoš (Space Meridian). You are building what the core team is prototyping. That is exactly where to be at a hackathon.
+
+---
+
+## 2. Why x402
+
+### 2.1 What x402 Is
+
+[x402](https://github.com/coinbase/x402) (5,400 ⭐ · Apache-2.0 · 193 contributors) is Coinbase and Cloudflare's open protocol for HTTP-native autonomous payments. [Launched May 2025, it has processed over 100 million transactions](https://www.x402.org/writing/x402-v2-launch). It revives the dormant HTTP 402 status code to make USDC payments as simple as an HTTP header.
+
+The complete payment flow in one diagram:
+
+```
+AI Agent / cron job / dApp
+       │
+       ├─── POST /api/deals/5847291/renew ──────────────────▶ StorKeep API
+       │◀── 402 Payment Required ────────────────────────────
+       │    PAYMENT-REQUIRED: { amount: "0.25 USDC",
+       │                        network: "eip155:84532",   ← Base Sepolia
+       │                        payTo:   "0xStorKeep..." }
+       │
+       │    [x402 client in SDK signs EIP-3009 USDC authorization]
+       │    [No MetaMask. No popup. No human.]
+       │
+       ├─── POST /api/deals/5847291/renew ──────────────────▶ StorKeep API
+       │    PAYMENT-SIGNATURE: <signed x402 payload>          │
+       │                                                       ├── Coinbase CDP facilitator verifies on Base
+       │                                                       ├── Calls Lighthouse RaaS contract on FVM
+       │                                                       ├── Emits DealRenewalTriggered on Filecoin chain
+       │◀── 200 OK ────────────────────────────────────────────
+            { renewed: true, txHash: "0xFilecoin...",
+              paymentTxHash: "0xBase...",
+              newExpiryEpoch: 2847291 }
+```
+
+### 2.2 The Exact npm Packages (Verified)
+
+All packages confirmed from [npmjs.com](https://www.npmjs.com) and [github.com/coinbase/x402](https://github.com/coinbase/x402):
+
+```bash
+# For the StorKeep SDK (client that calls the renewal API):
+npm install @x402/fetch @x402/evm @x402/core
+
+# For the StorKeep Backend (server that accepts payments):
+npm install @x402/express @x402/core @x402/evm @coinbase/x402
+```
+
+The key packages:
+
+| Package | Purpose | Source |
+|---------|---------|--------|
+| [`@x402/fetch`](https://www.npmjs.com/package/@x402/fetch) | Wraps native `fetch` to auto-handle 402 responses | npm |
+| [`@x402/evm`](https://www.npmjs.com/package/@x402/evm) | EVM/Base signing via EIP-3009 (USDC TransferWithAuthorization) | npm |
+| [`@x402/core`](https://www.npmjs.com/package/@x402/core) | Protocol types, client/server primitives | npm |
+| [`@x402/express`](https://www.npmjs.com/package/@x402/express) | Express middleware — one `app.use()` call | npm |
+| [`@coinbase/x402`](https://www.npmjs.com/package/@coinbase/x402) | Coinbase CDP facilitator (1,000 free tx/month, then $0.001/tx) | npm |
+
+### 2.3 The Exact Client-Side Code (Verified from npm docs)
+
+The `@x402/fetch` package exposes `wrapFetchWithPaymentFromConfig`. This is what StorKeep SDK uses internally — the developer never sees it:
+
+```typescript
+// Verified from @x402/fetch npm package docs
+import { wrapFetchWithPaymentFromConfig } from '@x402/fetch'
+import { ExactEvmScheme } from '@x402/evm'
+import { privateKeyToAccount } from 'viem/accounts'
+
+const account = privateKeyToAccount(process.env.EVM_PRIVATE_KEY as `0x${string}`)
+
+const fetchWithPayment = wrapFetchWithPaymentFromConfig(fetch, {
+  schemes: [
+    {
+      network: 'eip155:84532',  // Base Sepolia
+      client: new ExactEvmScheme(account),
+    },
+  ],
+})
+
+// From here: any fetch() that returns 402 is handled automatically
+// Payment is signed and request is retried — zero extra code
+const response = await fetchWithPayment('https://api.storkeep.xyz/api/deals/5847291/renew', {
+  method: 'POST',
+})
+```
+
+### 2.4 The Exact Server-Side Code (Verified from npm docs)
+
+From [`@x402/express` npm docs](https://www.npmjs.com/package/@x402/express) — this is what the StorKeep backend uses:
+
+```typescript
+// Verified from @x402/express npm package docs
+import express from 'express'
+import { paymentMiddleware } from '@x402/express'
+import { facilitator } from '@coinbase/x402'
+
+const app = express()
+
+const routes: RoutesConfig = {
+  'POST /api/deals/:dealId/renew': {
+    accepts: {
+      scheme: 'exact',
+      price: '$0.25',
+      network: 'eip155:84532',     // Base Sepolia
+      payTo: process.env.STORKEEP_WALLET_ADDRESS,
+      maxTimeoutSeconds: 60,
+    },
+    description: 'Renew a Filecoin storage deal via Lighthouse RaaS',
+  },
+  'POST /api/autopilot': {
+    accepts: {
+      scheme: 'exact',
+      price: '$0.10',
+      network: 'eip155:84532',
+      payTo: process.env.STORKEEP_WALLET_ADDRESS,
+      maxTimeoutSeconds: 60,
+    },
+    description: 'Register a deal for autopilot renewal monitoring',
+  },
+}
+
+// Requires env: CDP_API_KEY_ID, CDP_API_KEY_SECRET
+app.use(paymentMiddleware(routes, resourceServer, undefined, undefined))
+```
+
+### 2.5 Why x402 Is Perfect Here
+
+The deal renewal problem is fundamentally an **autonomous payment problem**. The client is an AI agent, a GitHub Action, a cron job, or a dApp — none of which can click a MetaMask popup.
+
+[Coinbase's Agentic Wallets (February 2026)](https://www.coinbase.com/developer-platform/discover/launches/agentic-wallets) provide purpose-built infrastructure for exactly this: AI agents that autonomously hold USDC and pay for services via x402. [Coinbase AgentKit](https://github.com/coinbase/agentkit) gives any AI agent a wallet that works natively with x402.
+
+```typescript
+// An AI agent that never loses Filecoin storage
+import { AgentKit } from '@coinbase/agentkit'
+import { StorKeep } from 'storkeep-sdk'
+
+const agentKit = await AgentKit.from({
+  cdpApiKeyId: process.env.CDP_KEY_ID,
+  cdpApiKeySecret: process.env.CDP_KEY_SECRET,
+})
+
+const sk = new StorKeep({ x402Wallet: agentKit.wallet, network: 'calibration' })
+
+await sk.enableAutopilot({
+  dealId: '5847291',
+  renewWhenEpochsLeft: 100_000,  // ~35 days warning
+  maxPriceUsdc: 1.00,
+})
+
+// Agent wallet is charged $0.25 USDC on Base when renewal triggers.
+// No human approved this. This is the entire point.
+```
+
+---
+
+## 3. What StorKeep Is
+
+StorKeep has three components:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    storkeep-sdk (npm)                        │
+│  getDealStatus() · renewDeal() · enableAutopilot()           │
+│  Uses @x402/fetch internally — developer sees nothing        │
+├─────────────────────────────────────────────────────────────┤
+│              StorKeep Backend (x402-gated REST API)          │
+│  Hosted on Railway · x402 middleware via @x402/express       │
+│  Reads Filecoin chain · Calls Lighthouse RaaS · Emits events │
+├──────────────────────┬──────────────────────────────────────┤
+│  Filecoin FVM        │  Base (Sepolia / Mainnet)             │
+│  StorKeepRegistry    │  USDC payments via x402               │
+│  .sol contract       │  Coinbase CDP facilitator             │
+│  Renewal audit log   │  $0.25 per renewal                    │
+└──────────────────────┴──────────────────────────────────────┘
+```
+
+**Component A: `storkeep-sdk` on npm**
+The TypeScript package developers install. Three public methods. Handles x402 payments internally. Built with [tsup](https://tsup.egoist.dev/) — CJS + ESM + `.d.ts`.
+
+**Component B: StorKeep Backend**
+An Express server gated by `@x402/express` middleware. Monitors Filecoin deals via [Glif RPC](https://lotus.filecoin.io/lotus/developers/glif-nodes/), triggers renewals through the [Lighthouse RaaS smart contract](https://docs.lighthouse.storage/lighthouse-1/filecoin-first/section-b), and records every renewal on-chain.
+
+**Component C: StorKeepRegistry.sol**
+A minimal FVM contract that emits `DealRenewalTriggered` events — a public, verifiable audit trail of every renewal StorKeep has ever performed.
+
+---
+
+## 4. SDK Architecture
+
+### 4.1 Directory Structure
+
+```
+storkeep-sdk/
+├── src/
+│   ├── index.ts              # Public exports — everything the user imports
+│   ├── StorKeep.ts           # Main class — all six public methods
+│   ├── types/
+│   │   └── index.ts          # All TypeScript interfaces and types
+│   ├── config/
+│   │   └── networks.ts       # Network configs: calibration + mainnet
+│   ├── utils/
+│   │   ├── epochs.ts         # Filecoin epoch utilities
+│   │   ├── fil.ts            # attoFIL ↔ FIL conversion
+│   │   └── validators.ts     # Input validation
+│   ├── x402/
+│   │   └── client.ts         # x402 fetch wrapper (internal, not exported)
+│   └── errors.ts             # StorKeepError hierarchy
+├── tsup.config.ts            # Build: CJS + ESM + .d.ts
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+### 4.2 `tsup.config.ts` (Exact, Verified)
+
+Based on verified tsup docs at [tsup.egoist.dev](https://tsup.egoist.dev/) and [real-world patterns](https://snyk.io/blog/building-npm-package-compatible-with-esm-and-cjs-2024/):
+
+```typescript
+// tsup.config.ts
+import { defineConfig } from 'tsup'
+
+export default defineConfig({
+  entry: ['src/index.ts'],
+  format: ['cjs', 'esm'],
+  dts: true,           // generates .d.ts and .d.cts
+  clean: true,         // cleans dist/ before build
+  sourcemap: true,
+  treeshake: true,
+  target: 'es2020',
+  external: [
+    // Don't bundle — users provide their own viem
+    'viem',
+    'viem/accounts',
+    'viem/chains',
+  ],
+})
+```
+
+### 4.3 `package.json` (Exact exports field)
+
+```json
+{
+  "name": "storkeep-sdk",
+  "version": "0.1.0",
+  "description": "Autonomous Filecoin deal renewal SDK powered by x402",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import":  "./dist/index.mjs",
+      "types":   "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build":          "tsup",
+    "dev":            "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["filecoin", "fvm", "x402", "storage", "renewal", "sdk"],
+  "license": "MIT",
+  "dependencies": {
+    "@x402/core":  "^2.0.0",
+    "@x402/evm":   "^2.0.0",
+    "@x402/fetch": "^2.0.0"
+  },
+  "peerDependencies": {
+    "viem": ">=2.0.0"
+  },
+  "devDependencies": {
+    "tsup":       "^8.0.0",
+    "typescript": "^5.4.0",
+    "viem":       "^2.0.0"
+  }
+}
+```
+
+---
+
+## 5. Complete API Reference
+
+### 5.1 `new StorKeep(config)` — Constructor
+
+```typescript
+import { StorKeep } from 'storkeep-sdk'
+import { createWalletClient, http } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { baseSepolia } from 'viem/chains'
+
+// Option A: viem WalletClient (any EVM wallet)
+const account = privateKeyToAccount(`0x${process.env.PRIVATE_KEY}`)
+const wallet  = createWalletClient({ account, chain: baseSepolia, transport: http() })
+
+const sk = new StorKeep({
+  x402Wallet:    wallet,
+  network:       'calibration',   // 'calibration' | 'mainnet'
+  // Optional overrides:
+  storkeepApiUrl: 'https://api.calibration.storkeep.xyz',
+  filecoinRpc:    'https://api.calibration.node.glif.io/rpc/v1',
+})
+
+// Option B: Coinbase AgentKit wallet (AI agent use case)
+// const sk = new StorKeep({ x402Wallet: agentKit.wallet, network: 'calibration' })
+
+// Option C: raw private key string (testing only — not for production)
+// const sk = new StorKeep({ x402Wallet: { privateKey: '0x...' }, network: 'calibration' })
+```
+
+**Config type:**
+
+```typescript
+interface StorKeepConfig {
+  x402Wallet:     WalletClient | AgentKitWallet | { privateKey: `0x${string}` }
+  network?:       'calibration' | 'mainnet'   // default: 'calibration'
+  storkeepApiUrl?: string                      // override API endpoint
+  filecoinRpc?:   string                       // override Filecoin JSON-RPC
+}
+```
+
+---
+
+### 5.2 `getDealStatus(dealId)` — Free, No Payment
+
+Queries the Filecoin chain directly via [Glif JSON-RPC](https://lotus.filecoin.io/lotus/developers/glif-nodes/) using `Filecoin.StateMarketStorageDeal`. No x402 payment. No SDK token needed.
+
+```typescript
+const status = await sk.getDealStatus('5847291')
+```
+
+**Returns `DealStatus`:**
+
+```typescript
+interface DealStatus {
+  dealId:              string
+  pieceCid:            string           // bafyreid...
+  clientAddress:       string           // f410f... Filecoin address
+  providerMinerId:     string           // f012345
+  startEpoch:          number
+  endEpoch:            number
+  currentEpoch:        number           // fetched from Filecoin.ChainHead
+  epochsUntilExpiry:   number           // endEpoch - currentEpoch
+  daysUntilExpiry:     number           // epochsUntilExpiry / 2880
+  needsRenewal:        boolean          // true if < renewThreshold
+  renewalCostUsdc:     string           // "$0.25" — from StorKeep API
+  status:              'active' | 'expiring' | 'expired'
+}
+```
+
+**Example output:**
+
+```
+{
+  dealId: '5847291',
+  pieceCid: 'bafyreidcr2b4tbqlvlh...',
+  clientAddress: 'f410fxrp4y...',
+  providerMinerId: 'f012345',
+  startEpoch: 1284920,
+  endEpoch: 2132211,
+  currentEpoch: 2120000,
+  epochsUntilExpiry: 12211,
+  daysUntilExpiry: 4.2,
+  needsRenewal: true,
+  renewalCostUsdc: '0.25',
+  status: 'expiring'
+}
+```
+
+**How it works internally:**
+
+```typescript
+// Filecoin JSON-RPC call — verified from Ankr docs + Glif docs
+const response = await fetch('https://api.calibration.node.glif.io/rpc/v1', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'Filecoin.StateMarketStorageDeal',
+    params: [parseInt(dealId), null],
+  }),
+})
+const { result } = await response.json()
+// result.Proposal.StartEpoch, result.Proposal.EndEpoch, result.Proposal.PieceCID['/']
+```
+
+---
+
+### 5.3 `renewDeal(dealId, options?)` — x402 Payment Automatic
+
+Triggers a single renewal. The SDK's internal x402 client intercepts the 402 response, signs the USDC payment from the configured wallet, and retries — all transparently.
+
+```typescript
+const result = await sk.renewDeal('5847291', {
+  maxPriceUsdc:    1.00,        // refuse if cost > $1.00 USDC
+  durationEpochs:  518_400,     // ~6 months — MIN_DEAL_DURATION_EPOCHS
+})
+```
+
+**Returns `RenewalResult`:**
+
+```typescript
+interface RenewalResult {
+  renewed:         boolean
+  dealId:          string
+  txHash:          string    // Filecoin chain transaction hash
+  paymentTxHash:   string    // Base chain USDC payment transaction hash
+  actualCostUsdc:  string    // "$0.25"
+  newExpiryEpoch:  number
+  newExpiryDate:   string    // ISO-8601
+  filfoxUrl:       string    // https://calibration.filfox.info/en/tx/0x...
+  basescanUrl:     string    // https://sepolia.basescan.org/tx/0x...
+  lighthouseJobId: string    // Lighthouse RaaS job reference
+}
+```
+
+**Options type:**
+
+```typescript
+interface RenewOptions {
+  maxPriceUsdc?:   number   // default: 1.00
+  durationEpochs?: number   // default: 518_400 (min deal duration, ~6 months)
+}
+```
+
+**Throws:**
+
+- `PriceExceededError` — if `actualCostUsdc > maxPriceUsdc`
+- `DealNotFoundError` — if `dealId` does not exist on-chain
+- `DealExpiredError` — if deal already expired (past `endEpoch`)
+- `InsufficientUsdcError` — if wallet USDC balance < renewal cost
+- `X402PaymentError` — if x402 facilitator rejects the payment
+- `RenewalFailedError` — if Lighthouse RaaS contract reverts
+
+---
+
+### 5.4 `enableAutopilot(config)` — Set and Forget
+
+Registers the deal with StorKeep's monitoring service. The cron job (runs every 6 hours) polls chain state and triggers renewal automatically when `epochsUntilExpiry < renewWhenEpochsLeft`. Payment is deducted from the wallet passed to the `StorKeep` constructor — no approval needed.
+
+```typescript
+const autopilot = await sk.enableAutopilot({
+  dealId:               '5847291',
+  renewWhenEpochsLeft:  100_000,    // ~35 days before expiry
+  maxPriceUsdc:         1.00,       // per-renewal budget cap
+  webhookUrl:           'https://myapp.com/storkeep-events',  // optional
+  webhookSecret:        'sk_whsec_...',                        // optional HMAC
+})
+```
+
+**Returns `AutopilotRegistration`:**
+
+```typescript
+interface AutopilotRegistration {
+  autopilotId:            string    // 'ap_xKj2...'
+  dealId:                 string
+  monitoringActive:       boolean
+  nextCheckAt:            string    // ISO-8601
+  estimatedRenewalDate:   string    // ISO-8601
+  webhookConfigured:      boolean
+}
+```
+
+**Options type:**
+
+```typescript
+interface AutopilotConfig {
+  dealId:              string
+  renewWhenEpochsLeft: number   // default: 100_000 (~35 days)
+  maxPriceUsdc:        number   // default: 1.00
+  webhookUrl?:         string
+  webhookSecret?:      string
+}
+```
+
+**Webhook payload (fired on every renewal):**
+
+```json
+{
+  "event":           "deal.renewed",
+  "dealId":          "5847291",
+  "txHash":          "0xabc...",
+  "paymentTxHash":   "0xdef...",
+  "costUsdc":        "0.25",
+  "newExpiryEpoch":  2847291,
+  "timestamp":       "2026-05-01T03:42:11Z"
+}
+```
+
+---
+
+### 5.5 `disableAutopilot(dealId)` — Stop Monitoring
+
+```typescript
+await sk.disableAutopilot('5847291')
+// Returns: { disabled: true, dealId: '5847291' }
+```
+
+---
+
+### 5.6 `getAutopilotStatus(dealId)` — View History
+
+```typescript
+const ap = await sk.getAutopilotStatus('5847291')
+```
+
+**Returns `AutopilotStatus`:**
+
+```typescript
+interface AutopilotStatus {
+  dealId:           string
+  monitoringActive: boolean
+  renewalHistory:   RenewalRecord[]
+  totalSpentUsdc:   string       // cumulative
+  nextCheckAt:      string
+}
+
+interface RenewalRecord {
+  epoch:     number
+  txHash:    string
+  costUsdc:  string
+  timestamp: string
+}
+```
+
+---
+
+### 5.7 `getBalance()` — USDC Balance of Wallet
+
+```typescript
+const bal = await sk.getBalance()
+// { usdc: '4.77', address: '0x...', network: 'base-sepolia' }
+```
+
+---
+
+### 5.8 Error Classes
+
+All extend `StorKeepError extends Error`. Import directly:
+
+```typescript
+import { StorKeep, PriceExceededError, DealExpiredError } from 'storkeep-sdk'
+
+try {
+  await sk.renewDeal('5847291', { maxPriceUsdc: 0.10 })
+} catch (e) {
+  if (e instanceof PriceExceededError) {
+    console.log(`Too expensive: $${e.actualCostUsdc} > $${e.maxPriceUsdc}`)
+  }
+  if (e instanceof DealExpiredError) {
+    console.log('Deal already expired — cannot renew')
+  }
+}
+```
+
+**Full error hierarchy:**
+
+```typescript
+class StorKeepError extends Error {
+  code: string
+  details?: unknown
+}
+
+// Payment errors
+class InsufficientUsdcError  extends StorKeepError {} // wallet USDC < renewal cost
+class PriceExceededError     extends StorKeepError {  // cost > maxPriceUsdc
+  actualCostUsdc: string
+  maxPriceUsdc:   string
+}
+class X402PaymentError       extends StorKeepError {} // CDP facilitator rejected
+
+// Filecoin errors
+class DealNotFoundError      extends StorKeepError {} // dealId not on chain
+class DealExpiredError       extends StorKeepError {} // past endEpoch
+class RenewalFailedError     extends StorKeepError {  // Lighthouse RaaS reverted
+  lighthouseError: string
+}
+
+// Config errors
+class InvalidNetworkError    extends StorKeepError {} // not 'calibration' | 'mainnet'
+class InvalidWalletError     extends StorKeepError {} // wallet can't sign EIP-3009
+class InvalidDealIdError     extends StorKeepError {} // non-numeric dealId
+```
+
+---
+
+### 5.9 Exported Constants and Utilities
+
+Everything exported from `'storkeep-sdk'`:
+
+```typescript
+// Epoch math — Filecoin: 1 epoch = 30 seconds
+export function epochsToMs(epochs: number): number          // epochs * 30_000
+export function msToEpochs(ms: number): number              // ms / 30_000
+export function epochsToHuman(epochs: number): string       // "14 days, 3 hours"
+export function daysToEpochs(days: number): number          // days * 2880
+
+// FIL denomination conversion
+export function attoFilToFil(attoFil: bigint): number       // / 1e18
+export function filToAttoFil(fil: number): bigint           // * 1e18
+export function formatFil(attoFil: bigint, dec?: number): string
+
+// Constants
+export const EPOCHS_PER_DAY        = 2_880
+export const EPOCHS_PER_MONTH      = 86_400
+export const MIN_DEAL_DURATION     = 518_400   // 6 months in epochs
+export const MAX_DEAL_DURATION     = 1_555_200 // 18 months in epochs
+export const ATTOFIL_PER_FIL       = 1_000_000_000_000_000_000n
+
+// Network configuration
+export const NETWORKS = {
+  calibration: { ... },
+  mainnet:     { ... },
+}
+export function getNetworkConfig(network: 'calibration' | 'mainnet'): NetworkConfig
+```
+
+---
+
+### 5.10 Network Configuration (Full)
+
+```typescript
+// src/config/networks.ts
+export const NETWORKS = {
+  calibration: {
+    filecoinRpc:               'https://api.calibration.node.glif.io/rpc/v1',
+    storkeepApiUrl:            'https://api.calibration.storkeep.xyz',
+    storkeepRegistryContract:  '0xTBD_DEPLOY_FIRST',     // deploy StorKeepRegistry.sol
+    lighthouseRaasContract:    '0x4015c3E5453d38Df71539C0F7440603C69784d7a',
+    x402Network:               'eip155:84532',            // Base Sepolia CAIP-2
+    usdcAddress:               '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    explorerUrl:               'https://calibration.filfox.info',
+    basescanUrl:               'https://sepolia.basescan.org',
+    chainId:                   314159,
+  },
+  mainnet: {
+    filecoinRpc:               'https://api.node.glif.io/rpc/v1',
+    storkeepApiUrl:            'https://api.storkeep.xyz',
+    storkeepRegistryContract:  '0xTBD',
+    lighthouseRaasContract:    '0xd928b92E6028463910b2005d118C2edE16C38a2a',
+    x402Network:               'eip155:8453',             // Base Mainnet CAIP-2
+    usdcAddress:               '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    explorerUrl:               'https://filfox.info',
+    basescanUrl:               'https://basescan.org',
+    chainId:                   314,
+  },
+} as const
+```
+
+---
+
+## 6. The Backend Service
+
+### 6.1 Routes
+
+```
+GET  /api/deals/:dealId/status      Free · queries Filecoin RPC
+POST /api/deals/:dealId/renew       x402-gated $0.25 · triggers Lighthouse RaaS
+GET  /api/autopilot/:dealId         Free · returns config + history
+POST /api/autopilot                 x402-gated $0.10 · registers monitoring
+DELETE /api/autopilot/:dealId       Free · stops monitoring
+GET  /api/health                    Free · health check
+GET  /api/stats                     Free · total renewals, deals monitored
+```
+
+### 6.2 The `POST /api/deals/:dealId/renew` Flow
+
+When called with a valid x402 USDC payment:
+
+1. **Verify deal exists** — `Filecoin.StateMarketStorageDeal` via Glif RPC. Extract `PieceCID` and `EndEpoch`.
+2. **Check deal is not expired** — if `currentEpoch > endEpoch`, return `DealExpiredError`.
+3. **Verify PieceCID is on IPFS** — Lighthouse RaaS requires the CID to be pinned. Check `https://api.lighthouse.storage/api/lighthouse/get_proof?cid=<cid>`.
+4. **Submit to Lighthouse RaaS** — call `submitRaaS(pieceCid, replications=1, repairThreshold=28800, renewThreshold=240)` on the Lighthouse contract. Contract address from [Lighthouse RaaS docs](https://docs.lighthouse.storage/lighthouse-1/filecoin-first/section-b).
+5. **Record on FVM** — call `StorKeepRegistry.recordRenewal(dealId, pieceCid, payerAddress, lighthouseJobId)`.
+6. **Return result** — include `txHash` (FVM), `paymentTxHash` (Base), `filfoxUrl`, `basescanUrl`.
+
+### 6.3 Monitoring Cron (every 6 hours)
+
+```typescript
+// Runs every 6 hours via node-cron
+async function checkAutopilotDeals() {
+  const registrations = await db.getActiveAutopilots()
+
+  for (const reg of registrations) {
+    const status = await getFilecoinDealStatus(reg.dealId)
+
+    if (status.epochsUntilExpiry < reg.renewWhenEpochsLeft) {
+      // Internal renewal — no x402 charge to monitoring service
+      await triggerRenewal(reg.dealId, reg.walletAddress, reg.maxPriceUsdc)
+
+      if (reg.webhookUrl) {
+        await fireWebhook(reg.webhookUrl, reg.webhookSecret, {
+          event: 'deal.renewed',
+          dealId: reg.dealId,
+          // ...
+        })
+      }
+    }
+  }
+}
+```
+
+---
+
+## 7. The FVM Smart Contract
+
+### 7.1 `StorKeepRegistry.sol`
+
+A minimal on-chain audit log. Every renewal StorKeep triggers is recorded here — providing verifiable proof that is publicly readable by anyone.
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+/// @title StorKeep Registry — On-chain renewal audit trail for Filecoin deals
+/// @notice Records every renewal triggered via StorKeep for public verifiability
+/// @dev Deployed on Filecoin Calibration testnet. Verified on Filfox.
+contract StorKeepRegistry {
+
+    struct Renewal {
+        uint64  dealId;
+        bytes   pieceCid;
+        address triggeredBy;      // address that paid via x402
+        uint256 timestamp;
+        string  lighthouseJobId;
+    }
+
+    mapping(uint64 => Renewal[]) public renewalHistory;
+    uint256 public totalRenewals;
+
+    event DealRenewalTriggered(
+        uint64  indexed dealId,
+        bytes           pieceCid,
+        address indexed triggeredBy,
+        string          lighthouseJobId,
+        uint256         timestamp
+    );
+
+    /// @notice Called by StorKeep backend after successful Lighthouse RaaS submission
+    function recordRenewal(
+        uint64  dealId,
+        bytes   calldata pieceCid,
+        address triggeredBy,
+        string  calldata lighthouseJobId
+    ) external {
+        renewalHistory[dealId].push(Renewal({
+            dealId:          dealId,
+            pieceCid:        pieceCid,
+            triggeredBy:     triggeredBy,
+            timestamp:       block.timestamp,
+            lighthouseJobId: lighthouseJobId
+        }));
+        totalRenewals++;
+        emit DealRenewalTriggered(dealId, pieceCid, triggeredBy, lighthouseJobId, block.timestamp);
+    }
+
+    /// @notice Returns full renewal history for a deal
+    function getRenewalHistory(uint64 dealId) external view returns (Renewal[] memory) {
+        return renewalHistory[dealId];
+    }
+
+    /// @notice Total renewals ever processed by StorKeep
+    function getTotalRenewals() external view returns (uint256) {
+        return totalRenewals;
+    }
+}
+```
+
+**Deploy with [fevm-hardhat-kit](https://github.com/filecoin-project/fevm-hardhat-kit):**
+
+```bash
+git clone https://github.com/filecoin-project/fevm-hardhat-kit
+cd fevm-hardhat-kit
+npm install
+
+# Add StorKeepRegistry.sol to contracts/
+# Deploy to Calibration
+npx hardhat deploy --network calibrationnet
+
+# Verify on Filfox Calibration
+# Copy contract address → src/config/networks.ts
+```
+
+---
+
+## 8. x402 Integration Deep Dive
+
+### 8.1 How the SDK Internally Wraps x402
+
+Inside `src/x402/client.ts`:
+
+```typescript
+// src/x402/client.ts — internal, not exported publicly
+import { wrapFetchWithPaymentFromConfig } from '@x402/fetch'
+import { ExactEvmScheme } from '@x402/evm'
+import type { WalletClient } from 'viem'
+
+export function createX402Fetch(wallet: WalletClient, network: string) {
+  const account = wallet.account!
+
+  return wrapFetchWithPaymentFromConfig(fetch, {
+    schemes: [
+      {
+        network,                           // 'eip155:84532' for Base Sepolia
+        client: new ExactEvmScheme(account),
+      },
+    ],
+  })
+}
+```
+
+Inside `StorKeep.ts`, the class stores this wrapped fetch and uses it for all API calls:
+
+```typescript
+// src/StorKeep.ts (simplified)
+export class StorKeep {
+  private readonly x402Fetch: ReturnType<typeof wrapFetchWithPaymentFromConfig>
+  private readonly config:    NetworkConfig
+
+  constructor(options: StorKeepConfig) {
+    this.config     = getNetworkConfig(options.network ?? 'calibration')
+    this.x402Fetch  = createX402Fetch(options.x402Wallet, this.config.x402Network)
+  }
+
+  async renewDeal(dealId: string, opts: RenewOptions = {}): Promise<RenewalResult> {
+    // This fetch call will automatically handle 402 if it occurs
+    const response = await this.x402Fetch(
+      `${this.config.storkeepApiUrl}/api/deals/${dealId}/renew`,
+      {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ durationEpochs: opts.durationEpochs ?? MIN_DEAL_DURATION }),
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.json()
+      this.throwTypedError(error)
+    }
+
+    return response.json() as Promise<RenewalResult>
+  }
+}
+```
+
+### 8.2 Getting Coinbase CDP API Keys (Free Tier)
+
+1. Sign up at [docs.cdp.coinbase.com](https://docs.cdp.coinbase.com/x402/welcome)
+2. Create API key — generates `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`
+3. Free tier: **1,000 transactions/month**, then **$0.001/transaction**
+4. Set env vars on Railway:
+
+```bash
+CDP_API_KEY_ID=your_key_id
+CDP_API_KEY_SECRET=your_key_secret
+STORKEEP_WALLET_ADDRESS=0xYourWalletAddress
+```
+
+### 8.3 USDC on Base Sepolia (For Testing)
+
+| Resource | URL |
+|----------|-----|
+| USDC contract (Base Sepolia) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| Circle USDC faucet | [faucet.circle.com](https://faucet.circle.com) |
+| BaseScan Sepolia | [sepolia.basescan.org](https://sepolia.basescan.org) |
+
+---
+
+## 9. Build Guide — File by File
+
+### 9.1 `src/types/index.ts`
+
+```typescript
+export interface StorKeepConfig {
+  x402Wallet:      WalletClient | { privateKey: `0x${string}` }
+  network?:        'calibration' | 'mainnet'
+  storkeepApiUrl?: string
+  filecoinRpc?:    string
+}
+
+export interface DealStatus {
+  dealId:            string
+  pieceCid:          string
+  clientAddress:     string
+  providerMinerId:   string
+  startEpoch:        number
+  endEpoch:          number
+  currentEpoch:      number
+  epochsUntilExpiry: number
+  daysUntilExpiry:   number
+  needsRenewal:      boolean
+  renewalCostUsdc:   string
+  status:            'active' | 'expiring' | 'expired'
+}
+
+export interface RenewalResult {
+  renewed:          boolean
+  dealId:           string
+  txHash:           string
+  paymentTxHash:    string
+  actualCostUsdc:   string
+  newExpiryEpoch:   number
+  newExpiryDate:    string
+  filfoxUrl:        string
+  basescanUrl:      string
+  lighthouseJobId:  string
+}
+
+export interface AutopilotConfig {
+  dealId:              string
+  renewWhenEpochsLeft: number
+  maxPriceUsdc:        number
+  webhookUrl?:         string
+  webhookSecret?:      string
+}
+
+export interface AutopilotStatus {
+  dealId:           string
+  monitoringActive: boolean
+  renewalHistory:   Array<{
+    epoch:     number
+    txHash:    string
+    costUsdc:  string
+    timestamp: string
+  }>
+  totalSpentUsdc:   string
+  nextCheckAt:      string
+}
+
+export interface NetworkConfig {
+  filecoinRpc:              string
+  storkeepApiUrl:           string
+  storkeepRegistryContract: string
+  lighthouseRaasContract:   string
+  x402Network:              string
+  usdcAddress:              string
+  explorerUrl:              string
+  basescanUrl:              string
+  chainId:                  number
+}
+
+export interface RenewOptions {
+  maxPriceUsdc?:   number
+  durationEpochs?: number
+}
+```
+
+### 9.2 `src/utils/epochs.ts`
+
+```typescript
+// 1 Filecoin epoch = 30 seconds
+export const EPOCHS_PER_SECOND = 1 / 30
+export const EPOCHS_PER_DAY    = 2_880       // 86400 / 30
+export const EPOCHS_PER_MONTH  = 86_400      // 30 days
+export const MIN_DEAL_DURATION = 518_400     // 6 months minimum
+export const MAX_DEAL_DURATION = 1_555_200   // 18 months maximum
+
+export function epochsToMs(epochs: number): number {
+  return epochs * 30_000
+}
+
+export function msToEpochs(ms: number): number {
+  return Math.floor(ms / 30_000)
+}
+
+export function daysToEpochs(days: number): number {
+  return Math.round(days * EPOCHS_PER_DAY)
+}
+
+export function epochsToHuman(epochs: number): string {
+  const totalSeconds = epochs * 30
+  const days    = Math.floor(totalSeconds / 86400)
+  const hours   = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+```
+
+### 9.3 `src/utils/fil.ts`
+
+```typescript
+export const ATTOFIL_PER_FIL = 1_000_000_000_000_000_000n
+
+export function attoFilToFil(attoFil: bigint): number {
+  return Number(attoFil) / Number(ATTOFIL_PER_FIL)
+}
+
+export function filToAttoFil(fil: number): bigint {
+  return BigInt(Math.round(fil * Number(ATTOFIL_PER_FIL)))
+}
+
+export function formatFil(attoFil: bigint, decimals = 4): string {
+  return attoFilToFil(attoFil).toFixed(decimals)
+}
+```
+
+### 9.4 `src/index.ts` (Public Exports)
+
+```typescript
+export { StorKeep } from './StorKeep'
+export type { StorKeepConfig, DealStatus, RenewalResult,
+              AutopilotConfig, AutopilotStatus, RenewOptions } from './types'
+export { StorKeepError, InsufficientUsdcError, PriceExceededError,
+         X402PaymentError, DealNotFoundError, DealExpiredError,
+         RenewalFailedError, InvalidNetworkError, InvalidWalletError,
+         InvalidDealIdError } from './errors'
+export { epochsToMs, msToEpochs, epochsToHuman, daysToEpochs,
+         EPOCHS_PER_DAY, EPOCHS_PER_MONTH, MIN_DEAL_DURATION, MAX_DEAL_DURATION } from './utils/epochs'
+export { attoFilToFil, filToAttoFil, formatFil, ATTOFIL_PER_FIL } from './utils/fil'
+export { NETWORKS, getNetworkConfig } from './config/networks'
+```
+
+---
+
+## 10. 48-Hour Build Plan
+
+### Hours 0–6: SDK Skeleton
+
+1. `mkdir storkeep-sdk && cd storkeep-sdk && npm init -y`
+2. Install dev deps: `npm i -D tsup typescript viem`
+3. Install runtime deps: `npm i @x402/fetch @x402/evm @x402/core`
+4. Write `tsup.config.ts` exactly as shown in §4.2
+5. Write `package.json` with exact exports field as shown in §4.3
+6. Write all files in `src/types/`, `src/utils/`, `src/config/`, `src/errors.ts`
+7. Stub `StorKeep.ts` with all 6 method signatures — no implementations yet
+8. Write `src/index.ts` with all exports
+9. `npm run build` — verify `dist/` has `.js`, `.mjs`, `.d.ts`. Fix any TypeScript errors.
+
+### Hours 6–12: FVM Contract + Deployment
+
+1. `git clone https://github.com/filecoin-project/fevm-hardhat-kit && npm install`
+2. Write `contracts/StorKeepRegistry.sol` exactly as shown in §7.1
+3. Write deploy script in `deploy/deploy-storkeep.ts`
+4. Get tFIL from [Calibration faucet](https://faucet.calibration.fildev.network)
+5. `npx hardhat deploy --network calibrationnet`
+6. Copy contract address → `src/config/networks.ts calibration.storkeepRegistryContract`
+7. Verify on [Filfox Calibration](https://calibration.filfox.info)
+
+### Hours 12–22: Backend Service
+
+1. `mkdir storkeep-api && nest new . --package-manager npm`
+2. `npm install express @x402/express @x402/core @x402/evm @coinbase/x402 ethers`
+3. Apply `paymentMiddleware` to renew + autopilot routes (see §6.1)
+4. Implement `DealsController`:
+   - `GET /status` → `Filecoin.StateMarketStorageDeal` via Glif RPC
+   - `POST /renew` → verify deal → `submitRaaS()` on Lighthouse contract → `recordRenewal()` on StorKeepRegistry → return result
+5. Implement `AutopilotController` with SQLite persistence
+6. Add monitoring cron (every 6 hours) as shown in §6.3
+7. Add `GET /api/health` and `GET /api/stats`
+8. Get CDP API keys from [docs.cdp.coinbase.com](https://docs.cdp.coinbase.com/x402/welcome)
+9. Deploy to Railway. Set env vars: `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `STORKEEP_WALLET_ADDRESS`
+
+### Hours 22–30: SDK Implementation
+
+1. Implement `getDealStatus()` — Filecoin JSON-RPC + status endpoint
+2. Implement `renewDeal()` — wire up x402 fetch client, call renew endpoint
+3. Implement `enableAutopilot()` — x402 fetch, call autopilot endpoint
+4. Implement `disableAutopilot()`, `getAutopilotStatus()`, `getBalance()`
+5. Wire all error classes — check backend error codes → throw typed errors
+6. Integration test: full flow against live Calibration testnet
+7. `npm publish` to npmjs.com. Verify `npm install storkeep-sdk` works.
+
+### Hours 30–38: Demo Preparation
+
+1. Pre-create 5+ deals on Calibration testnet with short expiry windows
+2. Fund demo wallet with Base Sepolia USDC from [Circle faucet](https://faucet.circle.com)
+3. Fund demo wallet with Calibration tFIL
+4. Run full end-to-end demo script (§11) from scratch on fresh machine
+5. Screenshot: Filfox `DealRenewalTriggered` event
+6. Screenshot: BaseScan USDC payment transaction
+7. Record 3-minute video
+
+### Hours 38–44: Polish
+
+1. Write `README.md` — install, quickstart, full API reference, all resource links
+2. Handle edge cases: deal not found, already expired, Lighthouse IPFS pin check failing
+3. Add `CONTRIBUTING.md` and `LICENSE`
+
+### Hours 44–48: Buffer
+
+1. Final submission checklist:
+   - [ ] GitHub repo public with README
+   - [ ] `npm install storkeep-sdk` works
+   - [ ] Backend live at `api.calibration.storkeep.xyz`
+   - [ ] StorKeepRegistry contract verified on Filfox Calibration
+   - [ ] Demo video ≤ 3 minutes
+
+---
+
+## 11. The Demo Script
+
+### 11.1 Setup (done in advance, not shown to judges)
+
+```bash
+# Fund demo wallet — Base Sepolia USDC
+# https://faucet.circle.com
+
+# Fund demo wallet — Calibration tFIL
+# https://faucet.calibration.fildev.network
+
+# Pre-create expiring deals on Calibration testnet
+# Use Lighthouse SDK with short endEpoch
+```
+
+### 11.2 The 3-Minute Script
+
+```typescript
+// demo.js — run this live in front of judges
+import { StorKeep, epochsToHuman } from 'storkeep-sdk'
+import { privateKeyToAccount } from 'viem/accounts'
+import { createWalletClient, http } from 'viem'
+import { baseSepolia } from 'viem/chains'
+
+const account = privateKeyToAccount(`0x${process.env.DEMO_KEY}`)
+const wallet  = createWalletClient({ account, chain: baseSepolia, transport: http() })
+const sk      = new StorKeep({ x402Wallet: wallet, network: 'calibration' })
+
+// ── Step 1: Check deal health (30 seconds) ─────────────────────────────────
+console.log('\n── Checking deal status...')
+const status = await sk.getDealStatus('5847291')
+
+console.log(`Deal 5847291:`)
+console.log(`  Provider:  ${status.providerMinerId}`)
+console.log(`  Expires:   ${epochsToHuman(status.epochsUntilExpiry)} (~${status.daysUntilExpiry.toFixed(1)} days)`)
+console.log(`  Status:    ${status.status}`)
+console.log(`  Cost:      $${status.renewalCostUsdc} USDC`)
+console.log(`  Action:    ${status.needsRenewal ? '⚠️  NEEDS RENEWAL' : '✅  OK'}`)
+
+// Expected output:
+// Deal 5847291:
+//   Provider:  f012345
+//   Expires:   7d 3h (~7.1 days)
+//   Status:    expiring
+//   Cost:      $0.25 USDC
+//   Action:    ⚠️  NEEDS RENEWAL
+
+// ── Step 2: Renew (90 seconds) ─────────────────────────────────────────────
+console.log('\n── Renewing deal via x402...')
+console.log('   (watch: no wallet popup, no MetaMask, no human approval)')
+
+const result = await sk.renewDeal('5847291', { maxPriceUsdc: 1.00 })
+// Internal x402 flow — silent:
+// → POST api.calibration.storkeep.xyz/api/deals/5847291/renew
+// ← 402 { amount: "0.25 USDC", network: "eip155:84532", payTo: "0x..." }
+// → ExactEvmScheme signs EIP-3009 USDC authorization
+// → POST (retry with X-PAYMENT header)
+// → Coinbase CDP facilitator settles on Base Sepolia
+// → StorKeep calls Lighthouse RaaS contract on Filecoin
+// → StorKeepRegistry emits DealRenewalTriggered event
+// ← 200 OK
+
+console.log(`\n✅ Deal renewed!`)
+console.log(`  New expiry:  epoch ${result.newExpiryEpoch}`)
+console.log(`  Cost paid:   $${result.actualCostUsdc} USDC`)
+console.log(`  Filecoin TX: ${result.filfoxUrl}`)
+console.log(`  USDC TX:     ${result.basescanUrl}`)
+
+// ── Step 3: Enable autopilot (30 seconds) ──────────────────────────────────
+console.log('\n── Enabling autopilot...')
+
+await sk.enableAutopilot({
+  dealId:               '5847291',
+  renewWhenEpochsLeft:  100_000,   // ~35 days notice
+  maxPriceUsdc:         1.00,
+})
+
+console.log('✅ Autopilot active. This deal will never expire.')
+console.log('   StorKeep checks every 6 hours.')
+console.log('   Wallet pays $0.25 USDC automatically when renewal triggers.')
+```
+
+### 11.3 What Judges See (Timeline)
+
+| Time | Action | Proof |
+|------|--------|-------|
+| 0:00–0:30 | Open [calibration.filfox.info](https://calibration.filfox.info) — find real expiring deal | Deal with endEpoch on-chain |
+| 0:30–1:00 | Run `node demo.js` — `getDealStatus()` output | Real chain data, "NEEDS RENEWAL" |
+| 1:00–1:45 | `renewDeal()` fires — x402 payment happens silently | Terminal shows step-by-step, no popup |
+| 1:45–2:15 | Switch to Filfox — show `DealRenewalTriggered` event | On-chain proof, Filecoin |
+| 2:15–2:35 | Switch to BaseScan — show USDC payment tx | On-chain proof, Base |
+| 2:35–3:00 | `npm install storkeep-sdk` + show 10-line script | Developer story |
+
+---
+
+## 12. Reference Links
+
+### Filecoin Core Infrastructure
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| Filecoin RaaS docs | [docs.filecoin.io/smart-contracts/programmatic-storage/raas](https://docs.filecoin.io/smart-contracts/programmatic-storage/raas) | RaaS architecture — what StorKeep builds on |
+| RaaS Starter Kit | [github.com/filecoin-project/raas-starter-kit](https://github.com/filecoin-project/raas-starter-kit) | Reference implementation |
+| fevm-hardhat-kit | [github.com/filecoin-project/fevm-hardhat-kit](https://github.com/filecoin-project/fevm-hardhat-kit) | Official Hardhat kit for FVM contracts |
+| Glif RPC docs | [lotus.filecoin.io/lotus/developers/glif-nodes](https://lotus.filecoin.io/lotus/developers/glif-nodes/) | JSON-RPC API used by SDK |
+| Glif RPC (Calibration) | `https://api.calibration.node.glif.io/rpc/v1` | Public endpoint for Filecoin.StateMarketStorageDeal |
+| Filfox Calibration | [calibration.filfox.info](https://calibration.filfox.info) | Block explorer for contracts + events |
+| Calibration Faucet | [faucet.calibration.fildev.network](https://faucet.calibration.fildev.network) | Get testnet FIL |
+| FF 2025 OKRs (KR2) | [fil.org/blog/filecoin-foundation-s-vision-and-strategic-priorities-for-2025](https://fil.org/blog/filecoin-foundation-s-vision-and-strategic-priorities-for-2025) | The KPI StorKeep solves |
+| FDS-7 x402 session | [filecoin.io/blog/posts/behind-the-scenes-in-buenos-aires-](https://filecoin.io/blog/posts/behind-the-scenes-in-buenos-aires-) | Core team working on x402+Filecoin |
+
+### Lighthouse RaaS
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| Lighthouse RaaS docs | [docs.lighthouse.storage/lighthouse-1/filecoin-first/section-b](https://docs.lighthouse.storage/lighthouse-1/filecoin-first/section-b) | Contract addresses, `submitRaaS()` API |
+| Lighthouse SDK | [`@lighthouse-web3/sdk`](https://www.npmjs.com/package/@lighthouse-web3/sdk) on npm | Upload + deal status SDK |
+| Lighthouse SDK docs | [docs.lighthouse.storage/quick-start](https://docs.lighthouse.storage/quick-start) | `dealStatus()`, `upload()` with `dealParams` |
+| Lighthouse RaaS (Calibration) | `0x4015c3E5453d38Df71539C0F7440603C69784d7a` | Contract to call `submitRaaS()` |
+| Lighthouse RaaS (Mainnet) | `0xd928b92E6028463910b2005d118C2edE16C38a2a` | Mainnet contract |
+
+### x402 Protocol
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| x402 GitHub | [github.com/coinbase/x402](https://github.com/coinbase/x402) | Source, spec, all SDK packages |
+| x402 website | [x402.org](https://x402.org) | Docs, V2 spec |
+| x402 V2 announcement | [x402.org/writing/x402-v2-launch](https://www.x402.org/writing/x402-v2-launch) | V2 architecture — what to use |
+| `@x402/fetch` | [npmjs.com/package/@x402/fetch](https://www.npmjs.com/package/@x402/fetch) | Client-side 402 handler |
+| `@x402/evm` | [npmjs.com/package/@x402/evm](https://www.npmjs.com/package/@x402/evm) | EVM/Base signing |
+| `@x402/express` | [npmjs.com/package/@x402/express](https://www.npmjs.com/package/@x402/express) | Server-side middleware |
+| `@coinbase/x402` | [npmjs.com/package/@coinbase/x402](https://www.npmjs.com/package/@coinbase/x402) | Coinbase CDP facilitator |
+| CDP x402 docs | [docs.cdp.coinbase.com/x402/welcome](https://docs.cdp.coinbase.com/x402/welcome) | API keys, free tier details |
+| Buyer quickstart | [x402.gitbook.io/x402/getting-started/quickstart-for-buyers](https://x402.gitbook.io/x402/getting-started/quickstart-for-buyers) | Client-side integration guide |
+| USDC on Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | Token address for test payments |
+| Circle faucet | [faucet.circle.com](https://faucet.circle.com) | Get Base Sepolia USDC |
+| BaseScan Sepolia | [sepolia.basescan.org](https://sepolia.basescan.org) | View USDC payment transactions |
+
+### Coinbase AgentKit
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| AgentKit GitHub | [github.com/coinbase/agentkit](https://github.com/coinbase/agentkit) | AI agent wallets |
+| Agentic Wallets launch | [coinbase.com/developer-platform/discover/launches/agentic-wallets](https://www.coinbase.com/developer-platform/discover/launches/agentic-wallets) | Purpose-built autonomous payment wallets |
+| Agentic Wallet docs | [docs.cdp.coinbase.com/agentic-wallet/welcome](https://docs.cdp.coinbase.com/agentic-wallet/welcome) | Setup guide |
+
+### SDK Build Tools
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| tsup | [tsup.egoist.dev](https://tsup.egoist.dev/) | TypeScript bundler: CJS + ESM + `.d.ts` |
+| tsup on npm | [`tsup`](https://www.npmjs.com/package/tsup) | Install: `npm i -D tsup` |
+| ESM+CJS guide | [snyk.io/blog/building-npm-package-compatible-with-esm-and-cjs-2024](https://snyk.io/blog/building-npm-package-compatible-with-esm-and-cjs-2024/) | `package.json` exports field pattern |
+
+### Evidence — Chain Data
+
+| Resource | URL | What it proves |
+|----------|-----|---------------|
+| Messari Q1 2025 | [messari.io/report/state-of-filecoin-q1-2025](https://messari.io/report/state-of-filecoin-q1-2025) | Active storage −13% from deal expirations |
+| Messari Q2 2025 | [messari.io/report/state-of-filecoin-q2-2025](https://messari.io/report/state-of-filecoin-q2-2025) | "Expirations removed more capacity than replaced" |
+| Messari Q3 2025 | [messari.io/report/state-of-filecoin-q3-2025](https://messari.io/report/state-of-filecoin-q3-2025) | Stabilised — enterprise data held |
+
+### Grants
+
+| Program | URL | Amount | Fit |
+|---------|-----|--------|-----|
+| FIL Builder Next Step | [fil.org/grants](https://fil.org/grants) | $5K–$10K | FVM + working proof of concept |
+| Open Grants — FVM | [fil.org/grants](https://fil.org/grants) | up to $50K | Novel FVM contract + developer SDK |
+| ProPGF Batch info | [filecoin.io/blog/posts/announcing-filecoin-propgf-batch-2-general-track](https://filecoin.io/blog/posts/announcing-filecoin-propgf-batch-2-general-track) | ~$4M pool | Developer tooling — highest-funded category |
+
+---
+
+## What's Live in the Demo vs What's Simulated
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| Filecoin Calibration deal (expiring) | **LIVE** | Pre-created before demo |
+| `getDealStatus()` — chain query | **LIVE** | Hits Glif RPC in real time |
+| x402 USDC payment on Base Sepolia | **LIVE** | $0.25 USDC, visible on BaseScan |
+| Lighthouse RaaS `submitRaaS()` call | **LIVE** | Transaction on Calibration |
+| `DealRenewalTriggered` event on Filfox | **LIVE** | StorKeepRegistry.sol emits it |
+| `storkeep-sdk` on npm | **LIVE** | `npm install storkeep-sdk` works live |
+| Backend on Railway | **LIVE** | `api.calibration.storkeep.xyz` |
+| Autopilot cron (every 6h) | **LIVE** | Running on Railway |
+| Full Lighthouse deal sealing | **PARTIAL** | `submitRaaS()` on-chain; sealing takes 24h+ |
+| Mainnet | **NOT IN DEMO** | Calibration testnet only for hackathon |
+
+---
+
+*StorKeep SDK · Autonomous Filecoin Deal Renewal · x402-Powered · PRD v1.0 · March 2026*
+
+*Directly addresses Filecoin Foundation KR2: 75% of on-chain deals renewed before expiring.*
+*Core team signal: FilOz presented "x402 on Filecoin Pay" at FDS-7 Buenos Aires, November 2025.*

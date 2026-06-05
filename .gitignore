@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-journal
+
+# Hardhat
+storkeep-contracts/artifacts/
+storkeep-contracts/cache/
+storkeep-contracts/typechain-types/
+
+# Prisma
+storkeep-app/prisma.config.ts
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*
+.turbo
+
+.vercel

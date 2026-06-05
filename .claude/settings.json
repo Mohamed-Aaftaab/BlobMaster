@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://base-sepolia.publicnode.com\" -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"jsonrpc\"\"\"\":\"\"\"\"2.0\"\"\"\",\"\"\"\"id\"\"\"\":1,\"\"\"\"method\"\"\"\":\"\"\"\"eth_call\"\"\"\",\"\"\"\"params\"\"\"\":[{\"\"\"\"to\"\"\"\":\"\"\"\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\"\"\"\",\"\"\"\"data\"\"\"\":\"\"\"\"0x70a082310000000000000000000000001d68253889deFde41175A670e4A3F13C84918EDf\"\"\"\"},\"\"\"\"latest\"\"\"\"]}')",
+      "Bash(python3 -c \"import sys,json; r=json.load\\(sys.stdin\\); v=int\\(r[''''result''''],16\\); print\\(f''''USDC on Base Sepolia: {v/1e6:.6f} USDC \\({v} atomic\\)''''\\)\")",
+      "Bash(node -e \":*)",
+      "Bash(curl -s \"https://base-sepolia.publicnode.com\" -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"jsonrpc\"\"\"\":\"\"\"\"2.0\"\"\"\",\"\"\"\"id\"\"\"\":1,\"\"\"\"method\"\"\"\":\"\"\"\"eth_getCode\"\"\"\",\"\"\"\"params\"\"\"\":[\"\"\"\"0x1d68253889deFde41175A670e4A3F13C84918EDf\"\"\"\",\"\"\"\"latest\"\"\"\"]}')",
+      "Bash(python3 -c \":*)",
+      "Bash(head -10 grep -rn signTypedData /Users/silas/storkeep/storkeep-app/node_modules/viem/_cjs/accounts/jsonRpc*)",
+      "Bash(head -20 grep -n \"txHash\\\\|paymentTx\\\\|RenewalResult\\\\|actualCost\" /Users/silas/storkeep/storkeep-sdk/src/index.ts)",
+      "Bash(cat /Users/silas/storkeep/storkeep-app/app/api/demo/renew/[dealId]/route.ts)",
+      "Bash(python3 -c \"import sys,json; r=json.load\\(sys.stdin\\); v=int\\(r[''''result''''],16\\); print\\(f''''USDC: {v/1e6:.6f} \\({v} atomic\\)''''\\)\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/pay/autopilot -H \"Content-Type: application/json\" -d '{\"\"dealId\"\":\"\"12345\"\",\"\"renewWhenEpochsLeft\"\":100000,\"\"maxPriceUsdc\"\":1.0}' -w \"\\\\nHTTP %{http_code}\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/pay/renew/12345 -w \"\\\\nHTTP %{http_code}\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/pay/renew/12345)",
+      "Bash(curl -s -X POST http://localhost:3000/api/deals/12345/renew -w '\\\\nHTTP %{http_code}')",
+      "Bash(head -20 grep -n \"store\\\\|announce\\\\|pieceCid\\\\|dealId\" /Users/silas/storkeep/storkeep-sdk/src/agent/synapse.ts)",
+      "Bash(find /Users/silas/storkeep/storkeep-sdk/src -name types*)",
+      "Bash(head -10 grep -n \"agent:renew\\\\|agent:deal\\\\|paymentTxHash\" /Users/silas/storkeep/storkeep-app/app/api/events/route.ts)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/deals/1/renew -X POST)",
+      "Bash(curl -s http://localhost:3000/api/pay/renew/1 -X POST)",
+      "Bash(curl -sv http://localhost:3000/api/pay/renew/1 -X POST)",
+      "Bash(curl -s http://localhost:3000/api/deals/1/renew -X POST)",
+      "Bash(node -e \"const {createSigner} = require\\(''x402/types''\\); console.log\\(typeof createSigner\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''exports'''',{}\\), indent=2\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); exports=d.get\\(''''exports'''',{}\\); print\\(''''\\\\n''''.join\\(exports.keys\\(\\)\\)\\)\")",
+      "Bash(node --input-type=module:*)",
+      "Bash(curl -s \"https://calibration.filfox.info/api/v1/deal/list?pageSize=1\")",
+      "Bash(curl -s \"http://localhost:3000/api/deals/217402/renew\" -X POST -H \"X-PAYMENT: test\")",
+      "Bash(npx prisma:*)",
+      "Bash(POSTGRES_PRISMA_URL=\"postgresql://neondb_owner:npg_tHWU6JVwjQ9i@ep-flat-violet-a48bzmdk-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require\" npx prisma db push)",
+      "Bash(curl -s \"http://localhost:3000/api/demo/renew/217402\" -X POST)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''version''''\\)\\)\")"
+    ]
+  }
+}

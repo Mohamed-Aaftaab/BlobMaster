@@ -1,0 +1,17 @@
+{
+  "name": "blobmaster-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy:calibration": "hardhat deploy --network calibrationnet",
+    "verify": "hardhat verify --network calibrationnet"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.22.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  }
+}
