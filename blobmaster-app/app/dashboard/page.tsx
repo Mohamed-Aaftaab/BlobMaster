@@ -1,11 +1,14 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ConnectButton, useCurrentAccount, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
+import { ConnectButton, useCurrentAccount, useSignTransaction, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { BlobMaster } from 'blobmaster-sdk'
 
-const bm = new BlobMaster({ network: 'testnet' })
+const bm = new BlobMaster({ 
+  network: 'testnet',
+  suiRpc: 'https://fullnode.testnet.sui.io:443'
+})
 
 export default function DashboardPage() {
   const [blobId, setBlobId]       = useState('')
@@ -28,20 +31,45 @@ export default function DashboardPage() {
   const [privKey, setPrivKey] = useState('')
   const [showPrivKey, setShowPrivKey] = useState(false)
 
-  // 🎬 DEMO MODE — simulates the full flow for recording/presentation
-  const [demoMode, setDemoMode] = useState(false)
-  const DEMO_VAULT = '0xac64b2f3e8d1a7c4f0291b83e6d5a2c7f4e1b8d3'
-  const DEMO_BLOB  = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw'
-  const DEMO_TX    = '7xK9mP2qR4nB8vD1jF5hL3wC6yA0tE2sU4zN7oX'
+  // ✨ Success modal state
+  const [autopilotModal, setAutopilotModal] = useState<{ digest: string; profile: string } | null>(null)
+  const [depositModal, setDepositModal]     = useState<{ digest: string } | null>(null)
 
   const account = useCurrentAccount()
   const { mutateAsync: signTransaction } = useSignTransaction()
+  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction()
   const suiClient = useSuiClient()
 
-  async function signAndRun(txb: Transaction) {
-    // If user pasted a private key, use it directly (bypass broken wallet)
+  // Compute active address (wallet or bypass)
+  const [bypassAddress, setBypassAddress] = useState<string>('')
+  useEffect(() => {
     if (privKey.trim()) {
-      const keypair = Ed25519Keypair.fromSecretKey(privKey.trim())
+      try {
+        const input = privKey.trim().replace(/\s+/g, ' ')
+        const kp = input.includes(' ') 
+          ? Ed25519Keypair.deriveKeypair(input) 
+          : Ed25519Keypair.fromSecretKey(input)
+        setBypassAddress(kp.toSuiAddress())
+      } catch (e) { setBypassAddress('') }
+    } else {
+      setBypassAddress('')
+    }
+  }, [privKey])
+
+  const activeAddress = bypassAddress || account?.address
+
+  async function signAndRun(txb: Transaction) {
+    // If user pasted a private key or seed phrase, use it directly (bypass broken wallet)
+    if (privKey.trim()) {
+      const input = privKey.trim().replace(/\s+/g, ' ')
+      let keypair: Ed25519Keypair;
+      if (input.includes(' ')) {
+        // It's a seed phrase
+        keypair = Ed25519Keypair.deriveKeypair(input)
+      } else {
+        // It's a raw private key
+        keypair = Ed25519Keypair.fromSecretKey(input)
+      }
       const client = suiClient as any
       const res = await client.signAndExecuteTransaction({
         signer: keypair,
@@ -53,31 +81,66 @@ export default function DashboardPage() {
       }
       return res
     }
-    // Normal wallet flow
-    const { bytes, signature } = await signTransaction({ transaction: txb, chain: 'sui:testnet' })
-    const res = await suiClient.executeTransactionBlock({
-      transactionBlock: bytes,
-      signature,
-      options: { showEffects: true, showObjectChanges: true },
-    })
-    if (res.effects?.status?.status !== 'success') {
-      throw new Error(res.effects?.status?.error ?? 'Transaction failed on chain')
+    // Try signAndExecuteTransaction first (lets wallet handle everything)
+    try {
+      console.log('[BlobMaster] Serializing tx to prevent postMessage clone errors...')
+      // We MUST serialize to a string so the wallet's postMessage bridge doesn't crash on class methods
+      const serializedTx = await txb.toJSON()
+      
+      console.log('[BlobMaster] Trying signAndExecuteTransaction...')
+      const res = await signAndExecuteTransaction({
+        transaction: serializedTx as any,
+        chain: 'sui:testnet',
+      })
+      console.log('[BlobMaster] signAndExecuteTransaction success:', res)
+      return res
+    } catch (e1: any) {
+      console.warn('[BlobMaster] signAndExecuteTransaction failed:', e1?.message, e1)
+      // Fallback: sign only, then execute ourselves
+      console.log('[BlobMaster] Trying signTransaction fallback...')
+      const serializedTx = await txb.toJSON()
+      const { bytes, signature } = await signTransaction({ transaction: serializedTx as any, chain: 'sui:testnet' })
+      console.log('[BlobMaster] signTransaction success, executing...')
+      const res = await suiClient.executeTransactionBlock({
+        transactionBlock: bytes,
+        signature,
+        options: { showEffects: true, showObjectChanges: true },
+      })
+      console.log('[BlobMaster] executeTransactionBlock result:', res)
+      if (res.effects?.status?.status !== 'success') {
+        throw new Error(res.effects?.status?.error ?? 'Transaction failed on chain')
+      }
+      return res
     }
     return res
   }
 
-  // Load user's vaults whenever wallet connects
+  // Load user's vaults whenever wallet connects — query RPC directly to avoid CORS issues
   useEffect(() => {
-    if (!account?.address) { setVaults([]); setSelectedVault(''); return }
+    if (!activeAddress) { setVaults([]); setSelectedVault(''); return }
     setLoadingVaults(true)
-    bm.getVaults(account.address)
-      .then(v => {
+    // Query Mysten public RPC directly (no CORS restrictions)
+    fetch('https://fullnode.testnet.sui.io:443', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1,
+        method: 'suix_getOwnedObjects',
+        params: [
+          activeAddress,
+          { filter: { StructType: `${bm.networkConfig.packageId}::vault::Vault` }, options: { showContent: true } }
+        ]
+      })
+    })
+      .then(r => r.json())
+      .then(j => {
+        const v = (j?.result?.data ?? []).map((d: any) => d.data).filter(Boolean)
         setVaults(v)
         if (v.length > 0) setSelectedVault(v[0]?.objectId ?? '')
       })
       .catch(() => setVaults([]))
       .finally(() => setLoadingVaults(false))
-  }, [account?.address])
+  }, [activeAddress])
 
   // ── Telemetry Helper ────────────────────────────────────────────────────────
   function reportError(type: string, message: string) {
@@ -91,16 +154,7 @@ export default function DashboardPage() {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   async function createVault() {
-    if (demoMode) {
-      setLoading(true); setError(null); setTxResult(null)
-      await new Promise(r => setTimeout(r, 1800))
-      setVaults([{ objectId: DEMO_VAULT, balance: '0' }])
-      setSelectedVault(DEMO_VAULT)
-      setTxResult(DEMO_TX)
-      setLoading(false)
-      return
-    }
-    if (!account) return setError('Connect your Sui Wallet first')
+    if (!activeAddress) return setError('Connect your Sui Wallet or enter a seed phrase first')
     setLoading(true); setError(null); setTxResult(null)
     try {
       const txb = new Transaction()
@@ -112,16 +166,35 @@ export default function DashboardPage() {
       setTxResult(res.digest ?? '')
       // Re-load vaults so the new one appears immediately
       try {
-        const updated = await bm.getVaults(account.address)
+        await new Promise(r => setTimeout(r, 2000)) // wait 2s for chain indexing
+        const resp = await fetch('https://fullnode.testnet.sui.io:443', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: 1,
+            method: 'suix_getOwnedObjects',
+            params: [
+              activeAddress,
+              { filter: { StructType: `${bm.networkConfig.packageId}::vault::Vault` }, options: { showContent: true } }
+            ]
+          })
+        })
+        const j = await resp.json()
+        const updated = (j?.result?.data ?? []).map((d: any) => d.data).filter(Boolean)
         setVaults(updated)
         if (updated.length > 0) setSelectedVault(updated[0]?.objectId ?? '')
       } catch (e) {
         console.error('Failed to refresh vaults:', e)
       }
     } catch (e: any) {
+      console.error('[BlobMaster] FULL ERROR OBJECT:', e)
+      console.error('[BlobMaster] Error keys:', Object.keys(e || {}))
+      console.error('[BlobMaster] Error message:', e?.message)
+      console.error('[BlobMaster] Error code:', e?.code)
+      console.error('[BlobMaster] Error data:', e?.data)
       const msg = e?.message || String(e)
       if (msg.toLowerCase().includes('incorrect password') || msg.toLowerCase().includes('wrong password')) {
-        setError('⚠️ Slush Wallet has a corrupted session. Please: 1) Click the Slush icon in your browser toolbar 2) Enter your password to UNLOCK it 3) Then click Create Vault again while keeping Slush open.')
+        setError('⚠️ Slush password error — open DevTools Console (F12) and check the red BlobMaster logs to see the exact error.')
       } else if (msg.includes('toJSON')) {
         setError('Sui Network is currently busy or rate-limiting. Please try again in a moment!')
       } else {
@@ -134,16 +207,10 @@ export default function DashboardPage() {
   }
 
   async function checkBlob() {
-    const trimmed = blobId.trim() || (demoMode ? DEMO_BLOB : '')
+    const trimmed = blobId.trim()
     if (!trimmed) return setError('Enter a Blob ID')
     setLoading(true); setError(null); setStatus(null); setTxResult(null)
     try {
-      if (demoMode) {
-        await new Promise(r => setTimeout(r, 1200))
-        setBlobId(DEMO_BLOB)
-        setStatus({ blobId: DEMO_BLOB, certified: true, active: true, sizeBytes: 2048576, expiresAt: Date.now() + 86400000 * 30, needsRenewal: false })
-        setLoading(false); return
-      }
       const res  = await fetch(`/api/blobs/${encodeURIComponent(trimmed)}/status`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch blob')
@@ -158,37 +225,38 @@ export default function DashboardPage() {
   }
 
   async function enableAutopilot() {
-    if (!demoMode && !account)       return setError('Connect your Sui Wallet first')
+    if (!account) return setError('Connect your Sui Wallet first')
     if (!selectedVault) return setError('Create a Vault first (Step 1)')
-    const trimmed = blobId.trim() || DEMO_BLOB
-    if (!trimmed)       return setError('Enter a Blob ID first')
+    const trimmed = blobId.trim()
+    if (!trimmed) return setError('Enter a Blob ID first')
     setLoading(true); setError(null)
     try {
-      if (demoMode) {
-        await new Promise(r => setTimeout(r, 2000))
-        setTxResult(DEMO_TX)
-        setLoading(false); return
-      }
       const config = {
         saver:    { renewWhenEpochsLeft: 1,  epochsToAdd: 10, maxPricePerEpochMist: BigInt(500_000),   keeperRewardMist: BigInt(10_000_000) },
         balanced: { renewWhenEpochsLeft: 5,  epochsToAdd: 30, maxPricePerEpochMist: BigInt(1_000_000), keeperRewardMist: BigInt(50_000_000) },
         premium:  { renewWhenEpochsLeft: 30, epochsToAdd: 90, maxPricePerEpochMist: BigInt(5_000_000), keeperRewardMist: BigInt(200_000_000) },
       }
       const { renewWhenEpochsLeft: renewThreshold, epochsToAdd, maxPricePerEpochMist: maxPrice, keeperRewardMist: keeperReward } = config[profile]
+      // blob_size_bytes: use status if available, else default to 1MB (1_048_576 bytes)
+      const blobSizeBytes = status?.sizeBytes ?? 1_048_576
       const txb = new Transaction()
       txb.moveCall({
         target: `${bm.networkConfig.packageId}::vault::register_autopilot`,
         arguments: [
-          txb.object(selectedVault),
-          txb.pure.string(trimmed),
-          txb.pure.u64(maxPrice),
-          txb.pure.u64(renewThreshold),
-          txb.pure.u64(epochsToAdd),
-          txb.pure.u64(keeperReward)
+          txb.object(selectedVault),          // &Vault
+          txb.pure.string(trimmed),            // blob_id: String
+          txb.pure.u64(renewThreshold),        // renew_when_epochs_left: u64
+          txb.pure.u64(epochsToAdd),           // epochs_to_add: u64
+          txb.pure.u64(maxPrice),              // max_price_per_epoch: u64
+          txb.pure.u64(keeperReward),          // keeper_reward: u64
+          txb.pure.string(''),                 // webhook_url: String (empty = no webhook)
+          txb.pure.u64(blobSizeBytes),         // blob_size_bytes: u64
+          txb.object('0x6'),                   // clock: &Clock
         ],
       })
       const res = await signAndRun(txb)
       setTxResult(res.digest)
+      setAutopilotModal({ digest: res.digest, profile })
     } catch (e: any) {
       const msg = e?.message || String(e)
       setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
@@ -199,16 +267,11 @@ export default function DashboardPage() {
   }
 
   async function depositToVault() {
-    if (!demoMode && !account)       return setError('Connect your Sui Wallet first')
+    if (!account) return setError('Connect your Sui Wallet first')
     if (!selectedVault) return setError('Create a Vault first (Step 1)')
     setLoading(true); setError(null)
     try {
-      if (demoMode) {
-        await new Promise(r => setTimeout(r, 1500))
-        setTxResult(DEMO_TX)
-        setLoading(false); return
-      }
-      const depositMist = BigInt(1500000000)
+      const depositMist = BigInt(100_000_000) // 0.1 SUI = 100,000,000 MIST
       const txb = new Transaction()
       const [coin] = txb.splitCoins(txb.gas, [txb.pure.u64(depositMist)])
       txb.moveCall({
@@ -217,6 +280,7 @@ export default function DashboardPage() {
       })
       const res = await signAndRun(txb)
       setTxResult(res.digest)
+      setDepositModal({ digest: res.digest })
     } catch (e: any) {
       const msg = e?.message || String(e)
       setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
@@ -229,20 +293,6 @@ export default function DashboardPage() {
   // ── UI ────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-transparent p-4 sm:p-8 text-slate-200">
-      {/* 🎬 Demo Mode Banner */}
-      <div className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 text-sm font-semibold transition-all ${
-        demoMode ? 'bg-amber-500 text-black' : 'bg-neutral-900/80 text-neutral-400 border-b border-neutral-800'
-      }`}>
-        <span>{demoMode ? '🎬 DEMO MODE — All actions are simulated for presentation' : 'Live Mode — connected to Sui Testnet'}</span>
-        <button
-          onClick={() => { setDemoMode(!demoMode); setVaults([]); setSelectedVault(''); setTxResult(null); setError(null) }}
-          className={`px-3 py-1 rounded-full text-xs font-bold border transition ${
-            demoMode ? 'bg-black text-amber-400 border-amber-400 hover:bg-amber-900' : 'bg-amber-500 text-black border-transparent hover:bg-amber-400'
-          }`}
-        >
-          {demoMode ? '⏹ Exit Demo' : '🎬 Enable Demo Mode'}
-        </button>
-      </div>
       <div className="max-w-2xl mx-auto font-sans">
 
         {/* Header */}
@@ -496,7 +546,7 @@ export default function DashboardPage() {
                   disabled={!account || !selectedVault || loading}
                   className="border border-amber-500 text-amber-400 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-500 hover:text-black transition disabled:opacity-50"
                 >
-                  Deposit 1.5 SUI to Vault
+                  Deposit 0.1 SUI to Vault
                 </button>
               </div>
               {!account && (
@@ -510,6 +560,197 @@ export default function DashboardPage() {
         )}
 
       </div>
+
+      {/* ── AUTOPILOT SUCCESS MODAL ── */}
+      {autopilotModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setAutopilotModal(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(135deg, #0f1a0f 0%, #0a1a10 50%, #061410 100%)',
+              border: '1px solid rgba(34,197,94,0.4)',
+              borderRadius: '20px',
+              padding: '40px',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 0 60px rgba(34,197,94,0.2), 0 25px 50px rgba(0,0,0,0.6)',
+              animation: 'modalIn 0.4s cubic-bezier(0.34,1.56,0.64,1)',
+            }}
+          >
+            {/* Animated checkmark */}
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{
+                width: '80px', height: '80px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 0 30px rgba(34,197,94,0.5)',
+                fontSize: '36px',
+              }}>✓</div>
+            </div>
+
+            <h2 style={{ textAlign: 'center', fontSize: '24px', fontWeight: 800, color: '#22c55e', marginBottom: '8px' }}>
+              🤖 Autopilot Enabled!
+            </h2>
+            <p style={{ textAlign: 'center', color: '#86efac', marginBottom: '28px', fontSize: '14px' }}>
+              Your blob is now protected by BlobMaster Keeper Agents
+            </p>
+
+            {/* Profile badge */}
+            <div style={{
+              background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: '12px', padding: '16px 20px', marginBottom: '20px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ color: '#6b7280', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Plan Selected</span>
+                <span style={{
+                  background: autopilotModal.profile === 'premium' ? 'linear-gradient(90deg,#ef4444,#dc2626)' :
+                               autopilotModal.profile === 'balanced' ? 'linear-gradient(90deg,#f59e0b,#d97706)' :
+                               'linear-gradient(90deg,#22c55e,#16a34a)',
+                  color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+                  textTransform: 'capitalize',
+                }}>
+                  {autopilotModal.profile === 'premium' ? '🔴 Premium' : autopilotModal.profile === 'balanced' ? '🟡 Balanced' : '🟢 Saver'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                {[
+                  ['Renew when', autopilotModal.profile === 'premium' ? '30 epochs left' : autopilotModal.profile === 'balanced' ? '5 epochs left' : '1 epoch left'],
+                  ['Adds', autopilotModal.profile === 'premium' ? '90 epochs' : autopilotModal.profile === 'balanced' ? '30 epochs' : '10 epochs'],
+                  ['Status', 'Active on Sui'],
+                  ['Keeper Network', 'Monitoring...'],
+                ].map(([label, val]) => (
+                  <div key={label} style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '8px 12px' }}>
+                    <div style={{ color: '#6b7280', fontSize: '10px', textTransform: 'uppercase' }}>{label}</div>
+                    <div style={{ color: '#d1fae5', fontSize: '13px', fontWeight: 600 }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* TX hash */}
+            <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '10px 14px', marginBottom: '24px' }}>
+              <div style={{ color: '#6b7280', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>Transaction Hash</div>
+              <a
+                href={`https://testnet.suivision.xyz/txblock/${autopilotModal.digest}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{ color: '#34d399', fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all', textDecoration: 'none' }}
+              >
+                {autopilotModal.digest} ↗
+              </a>
+            </div>
+
+            <button
+              onClick={() => setAutopilotModal(null)}
+              style={{
+                width: '100%', padding: '14px',
+                background: 'linear-gradient(90deg, #22c55e, #16a34a)',
+                color: 'white', fontWeight: 700, fontSize: '15px',
+                borderRadius: '12px', border: 'none', cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(34,197,94,0.4)',
+              }}
+            >
+              Got it! 🚀
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── DEPOSIT SUCCESS MODAL ── */}
+      {depositModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setDepositModal(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(135deg, #0f0f1a 0%, #0a0a1a 50%, #060614 100%)',
+              border: '1px solid rgba(251,191,36,0.4)',
+              borderRadius: '20px',
+              padding: '40px',
+              maxWidth: '440px',
+              width: '100%',
+              boxShadow: '0 0 60px rgba(251,191,36,0.15), 0 25px 50px rgba(0,0,0,0.6)',
+              animation: 'modalIn 0.4s cubic-bezier(0.34,1.56,0.64,1)',
+            }}
+          >
+            {/* Coin animation */}
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{
+                width: '80px', height: '80px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #fbbf24, #d97706)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 0 30px rgba(251,191,36,0.5)',
+                fontSize: '36px',
+              }}>🏦</div>
+            </div>
+
+            <h2 style={{ textAlign: 'center', fontSize: '24px', fontWeight: 800, color: '#fbbf24', marginBottom: '8px' }}>
+              Successfully Deposited!
+            </h2>
+            <p style={{ textAlign: 'center', color: '#fde68a', marginBottom: '28px', fontSize: '14px' }}>
+              SUI has been added to your BlobMaster Vault
+            </p>
+
+            {/* Deposit details */}
+            <div style={{
+              background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)',
+              borderRadius: '12px', padding: '20px', marginBottom: '20px',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {[
+                  ['Amount Deposited', '0.1 SUI'],
+                  ['Vault Status', 'Funded ✓'],
+                  ['Network', 'Sui Testnet'],
+                  ['Keeper Ready', 'Yes 🤖'],
+                ].map(([label, val]) => (
+                  <div key={label} style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '10px 14px' }}>
+                    <div style={{ color: '#9ca3af', fontSize: '10px', textTransform: 'uppercase' }}>{label}</div>
+                    <div style={{ color: '#fef3c7', fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* TX hash */}
+            <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '10px 14px', marginBottom: '24px' }}>
+              <div style={{ color: '#6b7280', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>Transaction Hash</div>
+              <a
+                href={`https://testnet.suivision.xyz/txblock/${depositModal.digest}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{ color: '#fcd34d', fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all', textDecoration: 'none' }}
+              >
+                {depositModal.digest} ↗
+              </a>
+            </div>
+
+            <button
+              onClick={() => setDepositModal(null)}
+              style={{
+                width: '100%', padding: '14px',
+                background: 'linear-gradient(90deg, #fbbf24, #d97706)',
+                color: 'black', fontWeight: 700, fontSize: '15px',
+                borderRadius: '12px', border: 'none', cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(251,191,36,0.4)',
+              }}
+            >
+              Awesome! 💪
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes modalIn {
+          from { opacity: 0; transform: scale(0.7) translateY(20px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
     </main>
   )
 }
