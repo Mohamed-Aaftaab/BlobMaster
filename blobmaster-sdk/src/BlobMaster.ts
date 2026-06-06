@@ -1,286 +1,255 @@
-import { createX402Fetch } from './x402/client'
 import { getNetworkConfig } from './config/networks'
 import { validateBlobId, validateNetwork } from './utils/validators'
-import {
-  EPOCHS_PER_DAY,
-  epochsToMs,
-  msToEpochs,
-  epochsToHuman,
-  daysToEpochs,
-  EPOCHS_PER_MONTH
-} from './utils/epochs'
-import { getFullnodeUrl, SuiClient } from '@mysten/sui.js/client'
-import {
-  BlobNotFoundError,
-  BlobExpiredError,
-  PriceExceededError,
-  BlobMasterError,
-} from './errors'
-import type {
-  BlobMasterConfig,
-  NetworkConfig,
-  BlobStatus,
-  ExtensionResult,
-  ExtendOptions,
-  AutopilotConfig,
-  AutopilotRegistration,
-  AutopilotStatus,
-  BalanceResult,
-  StoreOptions,
-  StoreResult,
-} from './types'
+import { SuiClient } from '@mysten/sui.js/client'
+import { TransactionBlock } from '@mysten/sui.js/transactions'
+import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519'
+import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography'
+import { BlobMasterError } from './errors'
+import type { BlobMasterConfig, NetworkConfig, AutopilotConfig, WalrusBlobInfo } from './types'
 
 export class BlobMaster {
-  // ── Static Utilities ────────────────────────────────────────────────────────
-  static utils = {
-    epochsToMs,
-    msToEpochs,
-    epochsToHuman,
-    daysToEpochs,
-    constants: {
-      EPOCHS_PER_DAY,
-      EPOCHS_PER_MONTH
-    }
-  }
-  private readonly x402Fetch: ReturnType<typeof createX402Fetch>
-  private readonly networkConfig: NetworkConfig
-  private readonly suiRpc: string
-  private readonly privateKey: `0x${string}` | undefined
-  private readonly suiClient: SuiClient
-  private readonly apiKey: string | undefined
+  public readonly networkConfig: NetworkConfig
+  public readonly suiClient: SuiClient
+  private readonly keypair?: Ed25519Keypair
+  private readonly tatumApiKey?: string
 
   constructor(options: BlobMasterConfig) {
     const network = options.network ?? 'testnet'
     validateNetwork(network)
-
     this.networkConfig = getNetworkConfig(network)
+    this.tatumApiKey   = options.tatumApiKey
 
-    if (options.blobMasterApiUrl) {
-      this.networkConfig = { ...this.networkConfig, blobMasterApiUrl: options.blobMasterApiUrl }
+    // Build Tatum-authenticated SuiClient
+    const rpcUrl = options.suiRpc ?? this.networkConfig.suiRpc
+    this.suiClient = options.suiClient ?? new SuiClient({
+      url: rpcUrl,
+      ...(this.tatumApiKey ? {
+        // Tatum requires the API key as a header on all RPC calls
+        fetch: (input: any, init?: any) => fetch(input, {
+          ...init,
+          headers: {
+            ...(init?.headers ?? {}),
+            'x-api-key': this.tatumApiKey!,
+          },
+        }),
+      } : {}),
+    })
+
+    if (options.suiPrivateKey) {
+      this.keypair = this._parseKeypair(options.suiPrivateKey)
     }
-
-    this.suiRpc = options.suiRpc ?? this.networkConfig.suiRpc
-    this.privateKey = options.privateKey
-    this.apiKey = options.apiKey
-
-    this.suiClient = new SuiClient({ url: this.suiRpc })
-
-    // Resolve x402 wallet: explicit override > privateKey shorthand
-    const wallet = options.x402Wallet ?? (options.privateKey ? { privateKey: options.privateKey } : undefined)
-    if (!wallet) throw new BlobMasterError('Provide privateKey or x402Wallet', 'INVALID_WALLET')
-    this.x402Fetch = createX402Fetch(wallet, this.networkConfig.x402Network)
   }
 
-  // ── Storage — Walrus ───────────────────────────────────────────────
-
-  /**
-   * ARCHITECTURAL DECISION:
-   * We intentionally restrict direct data ingestion and extraction in the BlobMaster SDK.
-   * Proxying massive data buffers through a middle-tier SDK is an anti-pattern that creates memory bottlenecks.
-   * Developers should upload and download data directly via a native Walrus Publisher or Aggregator,
-   * and then pass the resulting `blobId` to BlobMaster strictly for x402 lifecycle automation and renewals.
-   * 
-   * If you need deep storage integration inside a Node environment, see AgentVault.ts
-   */
-  async store(data: Buffer | Uint8Array | object, options?: StoreOptions): Promise<StoreResult> {
-    throw new BlobMasterError(
-      'Direct data ingestion is intentionally disabled in the SDK. Please upload directly to a Walrus Publisher and register the blobId here for renewals.',
-      'NOT_IMPLEMENTED'
-    )
-  }
-
-  /**
-   * ARCHITECTURAL DECISION:
-   * Direct retrieval is disabled. See the architectural note above store().
-   */
-  async retrieve(blobId: string): Promise<Buffer> {
-    throw new BlobMasterError(
-      'Direct data extraction is intentionally disabled in the SDK. Please download directly from a Walrus Aggregator using the blobId.',
-      'NOT_IMPLEMENTED'
-    )
-  }
-
-  // ── Free — queries Sui RPC / Walrus System directly, no payment ──────────────────────
-  async getBlobStatus(blobId: string): Promise<BlobStatus> {
-    validateBlobId(blobId)
-
-    // In Walrus, you can read the blob object or query the system object.
-    // For the hackathon, we assume the backend has an endpoint or we query Sui directly.
-    // Let's query the BlobMaster API backend for simplicity, as it handles the complex SUI queries.
-    const response = await fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/blobs/${blobId}/status`
-    )
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      if (error.code === 'BLOB_NOT_FOUND') {
-        throw new BlobNotFoundError(blobId)
-      }
-      throw new BlobMasterError(error.message ?? 'Unknown error', error.code ?? 'UNKNOWN')
+  /** Parse a suiprivkey... bech32 or raw hex private key */
+  private _parseKeypair(key: string): Ed25519Keypair {
+    if (key.startsWith('suiprivkey')) {
+      const { secretKey } = decodeSuiPrivateKey(key)
+      return Ed25519Keypair.fromSecretKey(secretKey)
     }
-
-    return response.json() as Promise<BlobStatus>
+    const hex = key.startsWith('0x') ? key.slice(2) : key
+    return Ed25519Keypair.fromSecretKey(new Uint8Array(Buffer.from(hex, 'hex')))
   }
 
-  // ── x402-gated — $0.25 ETH per call ────────────────────────────────────────
-  async extendBlob(blobId: string, opts: ExtendOptions = {}): Promise<ExtensionResult> {
-    validateBlobId(blobId)
+  // ── PTB Builders ─────────────────────────────────────────────────────────────
 
-    const maxPriceETH = opts.maxPriceETH ?? 1.00
-    const epochs = opts.epochs ?? 30 // extend for 30 epochs by default
-
-    const response = await this.x402Fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/blobs/${blobId}/extend`,
-      {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
-        },
-        body: JSON.stringify({ epochs }),
-      }
-    )
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      this.throwTypedError(error, blobId, maxPriceETH)
-    }
-
-    const result = await response.json() as ExtensionResult
-
-    if (parseFloat(result.actualCostETH) > maxPriceETH) {
-      throw new PriceExceededError(result.actualCostETH, String(maxPriceETH))
-    }
-
-    return result
+  public createVaultTx(): TransactionBlock {
+    const txb = new TransactionBlock()
+    txb.moveCall({
+      target: `${this.networkConfig.packageId}::vault::create_vault`,
+      arguments: [],
+    })
+    return txb
   }
 
-  /**
-   * Register a Walrus blob with the BlobMaster Agent Network for autonomous lifecycle management.
-   * Your blob will be continually monitored, and if its remaining epochs fall below the threshold,
-   * an automated ETH payment will be dispatched to extend it.
-   *
-   * @param config - The configuration for the autopilot registration
-   * @returns The autopilot registration details
-   */
-  async enableAutopilot(config: AutopilotConfig): Promise<AutopilotRegistration | AutopilotRegistration[]> {
+  public depositTx(vaultId: string, amountMist: bigint): TransactionBlock {
+    const txb = new TransactionBlock()
+    const [coin] = txb.splitCoins(txb.gas, [txb.pure(amountMist)])
+    txb.moveCall({
+      target: `${this.networkConfig.packageId}::vault::deposit`,
+      arguments: [txb.object(vaultId), coin],
+    })
+    return txb
+  }
+
+  /** Convenience: deposit using SUI amount (e.g. 1.5 SUI) — converts precisely to MIST */
+  public depositSuiTx(vaultId: string, amountSui: number): TransactionBlock {
+    const mist = BigInt(Math.round(amountSui * 1_000_000_000))
+    return this.depositTx(vaultId, mist)
+  }
+
+  public withdrawTx(vaultId: string, amountMist: bigint): TransactionBlock {
+    const txb = new TransactionBlock()
+    txb.moveCall({
+      target: `${this.networkConfig.packageId}::vault::withdraw`,
+      arguments: [txb.object(vaultId), txb.pure(amountMist)],
+    })
+    return txb
+  }
+
+  /** Convenience: withdraw using SUI amount */
+  public withdrawSuiTx(vaultId: string, amountSui: number): TransactionBlock {
+    const mist = BigInt(Math.round(amountSui * 1_000_000_000))
+    return this.withdrawTx(vaultId, mist)
+  }
+
+  public registerAutopilotTx(vaultId: string, config: AutopilotConfig): TransactionBlock {
+    const txb    = new TransactionBlock()
     const blobIds = Array.isArray(config.blobId) ? config.blobId : [config.blobId]
-    for (const id of blobIds) {
-      validateBlobId(id)
+
+    const renewEpochs = config.renewWhenEpochsLeft ?? 10
+    const epochsToAdd = config.epochsToAdd         ?? 30
+    const maxPrice    = config.maxPricePerEpoch     ?? 1_000_000
+    const reward      = config.keeperReward         ?? 1_000_000
+    const webhookUrl  = config.webhookUrl           ?? ''
+
+    for (const blobIdStr of blobIds) {
+      validateBlobId(blobIdStr)
+      txb.moveCall({
+        target: `${this.networkConfig.packageId}::vault::register_autopilot`,
+        arguments: [
+          txb.object(vaultId),
+          txb.pure(blobIdStr),
+          txb.pure(renewEpochs),
+          txb.pure(epochsToAdd),
+          txb.pure(maxPrice),
+          txb.pure(reward),
+          txb.pure(webhookUrl),
+        ],
+      })
     }
-
-    const payload = {
-      blobId: config.blobId,
-      extendWhenEpochsLeft: config.extendWhenEpochsLeft ?? 10,
-      maxPriceETH: config.maxPriceETH ?? 1.00,
-      webhookUrl: config.webhookUrl,
-      webhookSecret: config.webhookSecret,
-    }
-
-    const response = await this.x402Fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/autopilot`,
-      {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
-        },
-        body: JSON.stringify(payload),
-      }
-    )
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      this.throwTypedError(error, Array.isArray(config.blobId) ? config.blobId[0] : config.blobId)
-    }
-
-    return response.json() as Promise<AutopilotRegistration | AutopilotRegistration[]>
+    return txb
   }
 
-  // ── Free ────────────────────────────────────────────────────────────────────
-  async disableAutopilot(blobId: string): Promise<{ disabled: boolean; blobId: string }> {
-    validateBlobId(blobId)
+  public deleteRuleTx(ruleId: string, vaultId: string): TransactionBlock {
+    const txb = new TransactionBlock()
+    txb.moveCall({
+      target: `${this.networkConfig.packageId}::vault::delete_rule`,
+      arguments: [txb.object(ruleId), txb.object(vaultId)],
+    })
+    return txb
+  }
 
-    const response = await fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/autopilot/${blobId}`,
-      { 
-        method: 'DELETE',
-        headers: {
-          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
+  public executeRenewalTx(ruleId: string, vaultId: string, storageCostMist: bigint): TransactionBlock {
+    const txb = new TransactionBlock()
+    txb.moveCall({
+      target: `${this.networkConfig.packageId}::vault::execute_renewal`,
+      arguments: [
+        txb.object(ruleId),
+        txb.object(vaultId),
+        txb.pure(storageCostMist),
+      ],
+    })
+    return txb
+  }
+
+  // ── Read methods ─────────────────────────────────────────────────────────────
+
+  /** Get all Vault objects owned by an address */
+  public async getVaults(owner: string): Promise<any[]> {
+    const resp = await this.suiClient.getOwnedObjects({
+      owner,
+      filter: { StructType: `${this.networkConfig.packageId}::vault::Vault` },
+      options: { showContent: true },
+    })
+    return resp.data.map(d => d.data)
+  }
+
+  /** Query on-chain RuleCreated events to find all rules for a vault */
+  public async getRulesForVault(vaultId: string): Promise<any[]> {
+    const events = await this.suiClient.queryEvents({
+      query: { MoveEventType: `${this.networkConfig.packageId}::vault::RuleCreated` },
+      limit: 100,
+    })
+    return events.data
+      .map(e => e.parsedJson as any)
+      .filter(j => j?.vault_id === vaultId)
+  }
+
+  /** Query all RuleCreated events (for keepers) */
+  public async getAllRules(limit = 50): Promise<any[]> {
+    const events = await this.suiClient.queryEvents({
+      query: { MoveEventType: `${this.networkConfig.packageId}::vault::RuleCreated` },
+      limit,
+    })
+    return events.data.map(e => e.parsedJson)
+  }
+
+  /** Check blob status from the Walrus aggregator */
+  public async getBlobInfo(blobId: string): Promise<WalrusBlobInfo> {
+    const url = `${this.networkConfig.walrusAggregator}/v1/blobs/${blobId}/info`
+    try {
+      const res  = await fetch(url)
+      if (res.ok) {
+        const data = await res.json() as any
+        // Walrus REST API returns: { blob_id, registered_epoch, certified_epoch, end_epoch, ... }
+        const currentEpoch     = await this._getCurrentEpoch()
+        const endEpoch         = data.storage?.end_epoch ?? data.end_epoch ?? currentEpoch + 10
+        const epochsUntilExpiry = Math.max(0, endEpoch - currentEpoch)
+        return {
+          blobId,
+          endEpoch,
+          currentEpoch,
+          epochsUntilExpiry,
+          status:       epochsUntilExpiry <= 0 ? 'expired' : epochsUntilExpiry < 10 ? 'expiring' : 'active',
+          needsRenewal: epochsUntilExpiry < 10,
         }
       }
-    )
+    } catch { /* fallback below */ }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      this.throwTypedError(error, blobId)
+    // Fallback: query Sui chain for current epoch and assume blob is active
+    const currentEpoch = await this._getCurrentEpoch()
+    return {
+      blobId,
+      endEpoch:          currentEpoch + 30,
+      currentEpoch,
+      epochsUntilExpiry: 30,
+      status:            'active',
+      needsRenewal:      false,
     }
-
-    return response.json()
   }
 
-  // ── Free ────────────────────────────────────────────────────────────────────
-  async getAutopilotStatus(blobId: string): Promise<AutopilotStatus> {
-    validateBlobId(blobId)
-
-    const response = await fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/autopilot/${blobId}`,
-      {
-        headers: {
-          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
-        }
-      }
-    )
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      this.throwTypedError(error, blobId)
+  /** Upload a blob to Walrus via HTTP publisher — returns blob ID */
+  public async uploadBlob(data: Uint8Array | string, epochs = 30): Promise<string> {
+    const rawBody = typeof data === 'string' ? new TextEncoder().encode(data) : data
+    const body    = rawBody.buffer.slice(rawBody.byteOffset, rawBody.byteOffset + rawBody.byteLength) as BodyInit
+    const url     = `${this.networkConfig.walrusPublisher}/v1/blobs?epochs=${epochs}`
+    const res     = await fetch(url, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body,
+    })
+    if (!res.ok) {
+      throw new BlobMasterError(`Walrus upload failed: ${res.status} ${res.statusText}`, 'UPLOAD_FAILED')
     }
-
-    return response.json() as Promise<AutopilotStatus>
+    const json = await res.json() as any
+    // Walrus API returns { newlyCreated: { blobObject: { blobId } } } or { alreadyCertified: { blobId } }
+    return json.newlyCreated?.blobObject?.blobId
+        ?? json.alreadyCertified?.blobId
+        ?? json.blobId
+        ?? (() => { throw new BlobMasterError('Could not extract blobId from Walrus response', 'UPLOAD_FAILED') })()
   }
 
-  // ── Free ────────────────────────────────────────────────────────────────────
-  async getBalance(): Promise<BalanceResult> {
-    const response = await fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/balance`,
-      { 
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
-        } 
-      }
-    )
+  // ── Execution ─────────────────────────────────────────────────────────────────
 
-    if (!response.ok) {
-      throw new BlobMasterError('Failed to fetch balance', 'BALANCE_FETCH_FAILED')
+  public async executeTx(txb: TransactionBlock): Promise<any> {
+    if (!this.keypair) {
+      throw new BlobMasterError('No Sui private key configured for signing', 'NO_SIGNER')
     }
-
-    return response.json() as Promise<BalanceResult>
+    return this.suiClient.signAndExecuteTransactionBlock({
+      signer:           this.keypair,
+      transactionBlock: txb,
+      options:          { showEffects: true, showEvents: true },
+    })
   }
 
-  // ── Free ────────────────────────────────────────────────────────────────────
-  async getAuditTrail(blobId: string): Promise<any> {
-    validateBlobId(blobId)
-    const response = await fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/audit?blobId=${blobId}`
-    )
-    if (!response.ok) {
-      throw new BlobMasterError('Failed to fetch audit trail', 'AUDIT_FETCH_FAILED')
-    }
-    return response.json()
-  }
+  // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  private throwTypedError(error: { code?: string; message?: string }, blobId?: string, maxPriceETH?: number): never {
-    switch (error.code) {
-      case 'BLOB_NOT_FOUND':
-        throw new BlobNotFoundError(blobId ?? 'unknown')
-      case 'BLOB_EXPIRED':
-        throw new BlobExpiredError(blobId ?? 'unknown')
-      case 'PRICE_EXCEEDED':
-        throw new PriceExceededError(error.message ?? '?', String(maxPriceETH ?? '?'))
-      default:
-        throw new BlobMasterError(error.message ?? 'Unknown error', error.code ?? 'UNKNOWN')
+  private async _getCurrentEpoch(): Promise<number> {
+    try {
+      const state = await this.suiClient.getLatestSuiSystemState()
+      return Number(state.epoch)
+    } catch {
+      return Math.floor(Date.now() / (1000 * 60 * 60 * 24)) - 19000 // approximate Sui epoch
     }
   }
 }

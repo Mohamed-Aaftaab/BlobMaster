@@ -2,7 +2,8 @@
   "name": "blobmaster-app",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "test": "jest", 
+  "scripts": {
+    "test": "jest",
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
@@ -13,8 +14,10 @@
     "@base-org/account": "^2.5.3",
     "@coinbase/x402": "^2.1.0",
     "@google/generative-ai": "^0.24.1",
+    "@mysten/dapp-kit": "^1.0.6",
     "@mysten/sui.js": "^0.54.1",
     "@prisma/client": "^5.22.0",
+    "@tanstack/react-query": "^5.101.0",
     "blobmaster-sdk": "file:../blobmaster-sdk",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
@@ -27,9 +30,7 @@
     "react-force-graph": "^1.48.2",
     "react-force-graph-2d": "^1.29.1",
     "reactflow": "^11.11.4",
-    "tailwind-merge": "^3.6.0",
-    "viem": "^2.47.6",
-    "x402-next": "^1.1.0"
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",

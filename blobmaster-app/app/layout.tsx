@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
 import { AppShell } from "@/components/AppShell";
+import { SuiProvider } from "@/components/SuiProvider";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -32,7 +33,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans`}
       >
         <Suspense fallback={<div className="min-h-screen bg-zinc-950" />}>
-          <AppShell>{children}</AppShell>
+          <SuiProvider>
+            <AppShell>{children}</AppShell>
+          </SuiProvider>
         </Suspense>
       </body>
     </html>

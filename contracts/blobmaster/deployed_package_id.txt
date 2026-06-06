@@ -1,0 +1,8 @@
+PackageID: 0xf2c231a4ac2f95b6f88354a1a69b0e9e367bc728064b5ba14b5f8436b20f4a7e
+Network: Sui Testnet (testnet-v1.73.1)
+TxDigest: DukZ844TdGBiG5GzGrhD5jruMDrnQRjjMqvYXPqxbTG3
+Deployer: 0xb665b0070474b548ea628c55aad10c0a8a7b9f88bda20971c583e35d104f1460
+UpgradeCap: 0xcb3926157d5cedfa35c2679579262bc0d5c9dfa6a990a40cc5527c7f9f2ed0ce
+DeployedAt: 2026-06-06T11:09:28Z
+
+Explorer: https://testnet.suivision.xyz/package/0xf2c231a4ac2f95b6f88354a1a69b0e9e367bc728064b5ba14b5f8436b20f4a7e

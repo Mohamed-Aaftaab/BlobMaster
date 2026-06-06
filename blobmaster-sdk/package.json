@@ -1,7 +1,7 @@
 {
   "name": "blobmaster-sdk",
   "version": "1.0.0",
-  "description": "BlobMaster SDK - SUI deal renewal (x402) plus Agent Vault agent runtime (Walrus, Tatum)",
+  "description": "BlobMaster SDK — non-custodial Sui Walrus blob renewal via Programmable Transaction Blocks",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -15,23 +15,23 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
     "sui",
     "walrus",
-    "tatum",
-    "x402",
+    "ptb",
+    "programmable-transaction",
     "storage",
     "renewal",
-    "sdk"
+    "sdk",
+    "non-custodial"
   ],
   "license": "MIT",
   "dependencies": {
-    "@mysten/sui.js": "^0.54.1",
-    "@x402/core": "^2.0.0",
-    "@x402/evm": "^2.0.0",
-    "@x402/fetch": "^2.0.0"
+    "@mysten/sui.js": "^0.54.1"
   },
   "peerDependencies": {
     "viem": ">=2.0.0"
@@ -40,6 +40,7 @@
     "@types/node": "^20.19.41",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "viem": "^2.0.0"
+    "viem": "^2.0.0",
+    "vitest": "^2.0.0"
   }
 }

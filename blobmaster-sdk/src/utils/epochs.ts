@@ -1,29 +1,36 @@
-// 1 Sui epoch = 24 hours
-export const EPOCHS_PER_SECOND = 1 / 30
-export const EPOCHS_PER_DAY = 2_880        // 86400 / 30
-export const EPOCHS_PER_MONTH = 86_400     // 30 days
-export const MIN_DEAL_DURATION = 518_400   // 6 months minimum
-export const MAX_DEAL_DURATION = 1_555_200 // 18 months maximum
+// Sui/Walrus epoch durations
+// 1 Sui epoch = 24 hours (confirmed in Walrus docs and Sui system state)
+export const EPOCH_DURATION_MS   = 24 * 60 * 60 * 1000  // 86_400_000 ms
+export const EPOCHS_PER_DAY      = 1
+export const EPOCHS_PER_WEEK     = 7
+export const EPOCHS_PER_MONTH    = 30
+export const EPOCHS_PER_YEAR     = 365
 
+// Walrus storage deal constraints
+export const MIN_DEAL_EPOCHS     = 1           // minimum 1 epoch
+export const MAX_DEAL_EPOCHS     = 730         // ~2 years
+
+/** Convert epochs to milliseconds */
 export function epochsToMs(epochs: number): number {
-  return epochs * 30_000
+  return epochs * EPOCH_DURATION_MS
 }
 
+/** Convert milliseconds to epochs (floor) */
 export function msToEpochs(ms: number): number {
-  return Math.floor(ms / 30_000)
+  return Math.floor(ms / EPOCH_DURATION_MS)
 }
 
+/** Convert days to epochs (1:1 since 1 epoch = 1 day) */
 export function daysToEpochs(days: number): number {
   return Math.round(days * EPOCHS_PER_DAY)
 }
 
+/** Human-readable epoch duration */
 export function epochsToHuman(epochs: number): string {
-  const totalSeconds = epochs * 30
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
+  if (epochs <= 0)   return 'expired'
+  if (epochs === 1)  return '1 day'
+  if (epochs < 7)    return `${epochs} days`
+  if (epochs < 30)   return `${Math.round(epochs / 7)} weeks`
+  if (epochs < 365)  return `${Math.round(epochs / 30)} months`
+  return `${(epochs / 365).toFixed(1)} years`
 }

@@ -1,101 +1,35 @@
-import type { WalletClient } from 'viem'
-
-export interface StoreOptions {
-  epochs?: number
-  redundancy?: number
-  tag?: string
-}
-
-export interface StoreResult {
-  blobId: string
-  bytes: number
-}
-
 export interface BlobMasterConfig {
-  /** API Key for authenticated requests */
-  apiKey?: string
-  /** EOA private key — used for both x402 ETH payments and SUI/Walrus storage ops */
-  privateKey?: `0x${string}`
-  /** Explicit x402 wallet override. Defaults to { privateKey } when privateKey is set. */
-  x402Wallet?: WalletClient | { privateKey: `0x${string}` }
-  network?: 'testnet' | 'mainnet'
+  network?:      'testnet' | 'mainnet' | 'local'
   blobMasterApiUrl?: string
-  suiRpc?: string
-}
-
-export interface BlobStatus {
-  blobId: string
-  endEpoch: number
-  currentEpoch: number
-  epochsUntilExpiry: number
-  daysUntilExpiry: number
-  needsExtension: boolean
-  extensionCostETH: string
-  status: 'active' | 'expiring' | 'expired'
-}
-
-export interface ExtensionResult {
-  extended: boolean
-  blobId: string
-  txHash: string
-  paymentTxHash: string
-  actualCostETH: string
-  newExpiryEpoch: number
-  newExpiryDate: string
-  suiVisionUrl: string
-  basescanUrl: string
-}
-
-export interface ExtendOptions {
-  maxPriceETH?: number
-  epochs?: number
+  suiRpc?:       string
+  tatumApiKey?:  string   // Tatum API key (get one free at dashboard.tatum.io)
+  suiPrivateKey?: string  // bech32 suiprivkey... or hex — used for server-side signing only
+  suiClient?:    any
 }
 
 export interface AutopilotConfig {
-  blobId: string | string[]
-  extendWhenEpochsLeft?: number
-  maxPriceETH?: number
-  webhookUrl?: string
-  webhookSecret?: string
-}
-
-export interface AutopilotRegistration {
-  autopilotId: string
-  blobId: string
-  monitoringActive: boolean
-  nextCheckAt: string
-  estimatedExtensionDate: string
-  webhookConfigured: boolean
-}
-
-export interface ExtensionRecord {
-  epoch: number
-  txHash: string
-  costETH: string
-  timestamp: string
-}
-
-export interface AutopilotStatus {
-  blobId: string
-  monitoringActive: boolean
-  extensionHistory: ExtensionRecord[]
-  totalSpentETH: string
-  nextCheckAt: string
+  blobId:                string | string[]
+  renewWhenEpochsLeft?:  number   // default 10 epochs (~10 days)
+  epochsToAdd?:          number   // default 30 epochs (~30 days)
+  maxPricePerEpoch?:     number   // MIST, default 1_000_000 (0.001 SUI)
+  keeperReward?:         number   // MIST, default 1_000_000 (0.001 SUI)
+  webhookUrl?:           string   // optional POST callback on renewal
 }
 
 export interface NetworkConfig {
-  suiRpc: string
-  blobMasterApiUrl: string
-  walrusSystemObjectId: string
-  x402Network: string
-  ETHAddress: string
-  explorerUrl: string
-  basescanUrl: string
-  chainId: number
+  blobMasterApiUrl:  string
+  suiRpc:            string
+  packageId:         string
+  walrusSystemObj:   string
+  walrusPublisher:   string   // Walrus HTTP publisher endpoint
+  walrusAggregator:  string   // Walrus HTTP aggregator endpoint
 }
 
-export interface BalanceResult {
-  ETH: string
-  address: string
-  network: string
+export interface WalrusBlobInfo {
+  blobId:           string
+  endEpoch:         number
+  currentEpoch:     number
+  epochsUntilExpiry: number
+  status:           'active' | 'expiring' | 'expired'
+  needsRenewal:     boolean
 }

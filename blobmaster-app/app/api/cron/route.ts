@@ -1,47 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { getBlobFromChain, extendWalrusBlob } from '@/lib/sui'
+import { getBlobStorageInfo, extendWalrusBlob } from '@/lib/sui'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+/**
+ * Legacy cron route — kept for backward compatibility but now delegates to the keeper.
+ * In the new architecture, use /api/keeper instead.
+ * This route uses the Prisma autopilot DB only as a fallback registry for blobs
+ * that were registered before the on-chain Move contract was deployed.
+ */
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const registrations = await prisma.autopilot.findMany({ where: { active: true } })
-  const results: { blobId: string; renewed: boolean; txHash?: string; error?: string }[] = []
+  // Redirect internally to the keeper endpoint for on-chain processing
+  const keeperUrl = new URL('/api/keeper', req.url)
+  const keeperRes = await fetch(keeperUrl.toString(), {
+    headers: { 'authorization': `Bearer ${process.env.CRON_SECRET}` },
+  })
 
-  for (const reg of registrations) {
-    try {
-      const blob = await getBlobFromChain(reg.blobId)
-
-      if (blob.epochsUntilExpiry < reg.renewWhenEpochsLeft) {
-        const { walrusJobId, txHash } = await extendWalrusBlob(reg.blobId)
-
-        await prisma.renewalHistory.create({
-          data: { blobId: reg.blobId, txHash, walrusJobId: walrusJobId, epochAtRenewal: blob.currentEpoch },
-        })
-
-        if (reg.webhookUrl) {
-          fetch(reg.webhookUrl, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ event: 'blob.extended', blobId: reg.blobId, txHash, timestamp: new Date().toISOString() }),
-          }).catch(() => {})
-        }
-
-        results.push({ blobId: reg.blobId, renewed: true, txHash })
-      } else {
-        results.push({ blobId: reg.blobId, renewed: false })
-      }
-    } catch (e: any) {
-      results.push({ blobId: reg.blobId, renewed: false, error: e.message })
-    }
-  }
-
-  return NextResponse.json({ processed: registrations.length, results })
+  const keeperData = await keeperRes.json()
+  return NextResponse.json({ source: 'cron->keeper', ...keeperData })
 }
