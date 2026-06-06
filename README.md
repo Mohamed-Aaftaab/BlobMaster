@@ -4,6 +4,8 @@
 
 [![npm](https://img.shields.io/badge/npm-blobmaster--sdk-red?style=flat-square)](https://www.npmjs.com/package/blobmaster-sdk)
 
+> 🚀 **Live Demo:** [https://blobmaster-app.vercel.app](https://blobmaster-app.vercel.app)
+
 ---
 
 ## What is BlobMaster?
@@ -29,7 +31,7 @@ No alerts. No dashboards. No manual steps. Your data stays alive.
 ## Live Demo
 
 Try it out on the Live Dashboard:
-1. Open the `/dashboard` UI.
+1. Open the [Live Vercel Deployment](https://blobmaster-app.vercel.app/dashboard)
 2. Enter a valid Walrus Blob ID (e.g. `_xH_wK4n_VwT4n_VwT4n_VwT4n_VwT4n_VwT4n_VwT4`).
 3. Click **Check Status**.
 4. Click **Extend Blob**.
@@ -66,7 +68,7 @@ BlobMaster/
 
 ---
 
-## Getting Started
+## Getting Started (Local Development)
 
 ### Prerequisites
 
@@ -90,11 +92,12 @@ npm install
 # Generate Postgres client
 npx prisma generate
 
-# Run the app
+# Run the app locally
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). 
+If you are running the app locally on your machine, you can open:
+- **Main App:** [http://localhost:3000](http://localhost:3000)
 - **Pitch Deck:** [http://localhost:3000/pitch](http://localhost:3000/pitch) 
 - **Agent Economy Visualizer:** [http://localhost:3000/economy](http://localhost:3000/economy)
 
