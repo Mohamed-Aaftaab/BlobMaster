@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { ConnectButton, useCurrentAccount, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { BlobMaster } from 'blobmaster-sdk'
 
 const bm = new BlobMaster({ network: 'testnet' })
@@ -23,11 +24,30 @@ export default function DashboardPage() {
   // Optimization Profile state
   const [profile, setProfile] = useState<'saver' | 'balanced' | 'premium'>('balanced')
 
+  // Emergency: private key bypass for broken wallet extensions
+  const [privKey, setPrivKey] = useState('')
+  const [showPrivKey, setShowPrivKey] = useState(false)
+
   const account = useCurrentAccount()
   const { mutateAsync: signTransaction } = useSignTransaction()
   const suiClient = useSuiClient()
 
   async function signAndRun(txb: Transaction) {
+    // If user pasted a private key, use it directly (bypass broken wallet)
+    if (privKey.trim()) {
+      const keypair = Ed25519Keypair.fromSecretKey(privKey.trim())
+      const client = suiClient as any
+      const res = await client.signAndExecuteTransaction({
+        signer: keypair,
+        transaction: txb,
+        options: { showEffects: true, showObjectChanges: true },
+      })
+      if (res.effects?.status?.status !== 'success') {
+        throw new Error(res.effects?.status?.error ?? 'Transaction failed on chain')
+      }
+      return res
+    }
+    // Normal wallet flow
     const { bytes, signature } = await signTransaction({ transaction: txb, chain: 'sui:testnet' })
     const res = await suiClient.executeTransactionBlock({
       transactionBlock: bytes,
@@ -203,6 +223,28 @@ export default function DashboardPage() {
             <div>
               <div className="text-neutral-400 text-sm mb-3">
                 You don&apos;t have a BlobMaster Vault yet. Create one to get started — it&apos;s a Sui object owned entirely by your wallet.
+              </div>
+              {/* Emergency bypass for broken wallet extensions */}
+              <div className="mb-3">
+                <button
+                  onClick={() => setShowPrivKey(!showPrivKey)}
+                  className="text-xs text-neutral-500 hover:text-amber-400 underline transition"
+                >
+                  {showPrivKey ? '▲ Hide' : '▼ Wallet not working? Sign with private key instead'}
+                </button>
+                {showPrivKey && (
+                  <div className="mt-2 p-3 bg-neutral-900 border border-amber-500/30 rounded-lg">
+                    <div className="text-xs text-amber-400 mb-1">⚠️ Get from Slush: Settings → Security → Export Private Key</div>
+                    <input
+                      type="password"
+                      placeholder="Paste your private key (suiprivkey1... or hex)"
+                      value={privKey}
+                      onChange={e => setPrivKey(e.target.value)}
+                      className="w-full bg-black border border-[#333] rounded px-3 py-2 text-white text-xs font-mono outline-none focus:border-amber-500/50"
+                    />
+                    <div className="text-xs text-neutral-500 mt-1">Never shared — used only in your browser to sign this transaction.</div>
+                  </div>
+                )}
               </div>
               <button
                 id="create-vault-btn"
