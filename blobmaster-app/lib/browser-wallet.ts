@@ -102,14 +102,14 @@ async function ensureBaseSepolia(eth: EIP1193Provider) {
         ? ' You are on Ethereum Sepolia; switch to Base Sepolia in the wallet (Settings → Networks) or approve the network switch prompt.'
         : ''
     throw new Error(
-      `Wrong network: wallet reports chain ${chainHex} (${dec}). x402 USDC payments require Base Sepolia (84532 / 0x14a34).${hint}`,
+      `Wrong network: wallet reports chain ${chainHex} (${dec}). x402 ETH payments require Base Sepolia (84532 / 0x14a34).${hint}`,
     )
   }
 }
 
 /**
  * Base Wallet (EIP-1193) sometimes returns ABI-encoded bytes from eth_signTypedData_v4
- * instead of a raw 65-byte signature. The USDC transferWithAuthorization contract call
+ * instead of a raw 65-byte signature. The ETH transferWithAuthorization contract call
  * requires a raw sig. Find the 65-byte run inside the ABI blob and return it.
  */
 function unwrapSignature(sig: string): `0x${string}` {

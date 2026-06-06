@@ -18,7 +18,7 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "BlobMaster · Walrus blob extension",
   description:
-    "Auto-extend Walrus storage blobs with x402 USDC — plus Agent Vault, the live agent economy demo.",
+    "Auto-extend Walrus storage blobs with x402 ETH — plus Agent Vault, the live agent economy demo.",
 };
 
 export default function RootLayout({

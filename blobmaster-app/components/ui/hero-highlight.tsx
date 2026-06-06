@@ -82,10 +82,10 @@ export const Highlight = ({
       style={{
         backgroundRepeat: "no-repeat",
         backgroundPosition: "left center",
-        display: "inline",
+        display: "inline-block",
       }}
       className={cn(
-        `relative inline-block pb-1 px-1 rounded-lg bg-gradient-to-r from-gold-500/30 to-gold-500/30`,
+        `relative inline-block pb-1 pl-2 pr-0 rounded-lg bg-gradient-to-r from-gold-500/30 to-gold-500/30`,
         className
       )}
     >

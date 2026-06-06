@@ -27,10 +27,10 @@ export async function GET(
     renewalHistory: ap.renewals.map((r: { epochAtRenewal: number; txHash: string; createdAt: Date }) => ({
       epoch:     r.epochAtRenewal,
       txHash:    r.txHash,
-      costUsdc:  '0.25',
+      costETH:  '0.25',
       timestamp: r.createdAt.toISOString(),
     })),
-    totalSpentUsdc:  totalSpent.toFixed(2),
+    totalSpentETH:  totalSpent.toFixed(2),
     nextCheckAt:     new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
   })
 }

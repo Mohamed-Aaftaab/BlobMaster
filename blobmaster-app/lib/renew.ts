@@ -35,7 +35,7 @@ export async function performRenewal(blobId: string, payerAddress = 'demo') {
     renewed: true,
     blobId,
     txHash: txHash,
-    actualCostUsdc: '0.001',
+    actualCostETH: '0.001',
     newExpiryEpoch: blob.endEpoch + 10,
     newExpiryDate: new Date(Date.now() + 10 * 30_000).toISOString(),
     suivisionUrl: `${suivisionBase}/${txHash}`,

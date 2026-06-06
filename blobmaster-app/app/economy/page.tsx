@@ -76,7 +76,7 @@ const SUI_NODE: Node<AgentNodeData> = {
   data: { label:'Sui', type:'sui', budget:0, budgetTotal:0, stored:0, alive:true, pulsing:false, txCount:0, earned:0 },
 }
 
-interface Stats { alive:number; dead:number; critical:number; totalUsdc:number; totalStoredBytes:number; txCount:number }
+interface Stats { alive:number; dead:number; critical:number; totalETH:number; totalStoredBytes:number; txCount:number }
 
 function fmtBytes(b: number) {
   if (b>1e9) return `${(b/1e9).toFixed(1)} GB`
@@ -154,7 +154,7 @@ export default function EconomyPage() {
           break
         case 'agent:renew':
           if (n.id === ev.agentId) {
-            d.budget = Math.max(0, d.budget - parseFloat(ev.costUsdc ?? '0'))
+            d.budget = Math.max(0, d.budget - parseFloat(ev.costETH ?? '0'))
             d.pulsing = true; d.txCount++
           }
           break
@@ -243,7 +243,7 @@ export default function EconomyPage() {
       <div className="flex items-center justify-between px-5 h-12 border-b border-[#222] bg-[#0a0a0a] rounded-none shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-white font-semibold text-sm tracking-tight">BlobMaster · Agent Vault</span>
-          <span className="text-neutral-500 text-xs">Live Economy · 2-min Demo</span>
+          <span className="text-neutral-500 text-xs">Secondary Market · 2-min Demo</span>
         </div>
         <span className="text-neutral-300 text-sm font-semibold tracking-wide">Sui Calibration</span>
         <div className="flex items-center gap-4 text-xs">
@@ -286,7 +286,7 @@ export default function EconomyPage() {
         {[
           { color: '#fafafa', label: 'Producer → Store data' },
           { color: '#52525b', label: 'Sui → Consumer retrieve' },
-          { color: '#a1a1aa', label: 'Consumer → Pay USDC' },
+          { color: '#a1a1aa', label: 'Consumer → Pay ETH' },
           { color: '#d4af37', label: 'Guardian → extend CID' },
         ].map(({ color, label }) => (
           <div key={label} className="flex items-center gap-1.5">
@@ -304,9 +304,9 @@ export default function EconomyPage() {
           <div className="p-4 border-b border-[#222]">
             <div className="text-neutral-500 text-[10px] uppercase tracking-widest mb-3 font-semibold">Agent Types</div>
             {[
-              { type:'producer', label:'Producer', desc:'Stores data, earns USDC', color:'#fafafa', icon:'⬤' },
-              { type:'consumer', label:'Consumer', desc:'Retrieves, pays USDC', color:'#a1a1aa', icon:'⬤' },
-              { type:'guardian', label:'Guardian', desc:'Extends expiring Blobs', color:'#d4af37', icon:'◆' },
+              { type:'producer', label:'Producer', desc:'Stores data, earns ETH', color:'#fafafa', icon:'⬤' },
+              { type:'consumer', label:'Consumer', desc:'Retrieves, pays ETH', color:'#a1a1aa', icon:'⬤' },
+              { type:'guardian', label:'Bounty Hunter', desc:'Earns bounties for extending blobs', color:'#d4af37', icon:'◆' },
             ].map(a => (
               <div key={a.type} style={{ borderLeft: `2px solid ${a.color}55` }}
                 className="flex items-start gap-2.5 px-2 py-2 rounded-r-md hover:bg-white/5 cursor-default mb-1 transition-colors">
@@ -326,7 +326,7 @@ export default function EconomyPage() {
                 <SRow l="Alive"    v={stats.alive}                  c="text-white" />
                 <SRow l="Dead"     v={stats.dead}                   c="text-red-500" />
                 <SRow l="TXs"      v={stats.txCount}                c="text-neutral-300" />
-                <SRow l="USDC ↕"  v={stats.totalUsdc.toFixed(3)} c="text-gold-500" />
+                <SRow l="ETH ↕"  v={stats.totalETH.toFixed(3)} c="text-gold-500" />
                 <SRow l="Storage"  v={fmtBytes(stats.totalStoredBytes)} c="text-neutral-300" />
               </div>
             ) : <div className="text-neutral-600 text-xs">—</div>}
@@ -342,7 +342,7 @@ export default function EconomyPage() {
                 </div>
                 <div className="space-y-1.5 text-[10px] text-slate-400">
                   <div className="flex justify-between"><span>Type</span><span className="text-slate-300">{selected.data.type}</span></div>
-                  <div className="flex justify-between"><span>Budget</span><span className="text-slate-300">{selected.data.budget.toFixed(3)} USDC</span></div>
+                  <div className="flex justify-between"><span>Budget</span><span className="text-slate-300">{selected.data.budget.toFixed(3)} ETH</span></div>
                   <div className="flex justify-between"><span>Stored</span><span className="text-slate-300">{fmtBytes(selected.data.stored)}</span></div>
                   <div className="flex justify-between"><span>TXs</span><span className="text-slate-300">{selected.data.txCount}</span></div>
                   <div className="flex justify-between"><span>Status</span>
@@ -383,7 +383,7 @@ export default function EconomyPage() {
             {!running && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="text-center bg-black/80 backdrop-blur-md px-10 py-7 rounded-2xl border border-[#333]">
-                  <div className="text-white text-sm mb-1 font-semibold">Agent economy not running</div>
+                  <div className="text-white text-sm mb-1 font-semibold">Secondary Market not running</div>
                   <div className="text-neutral-500 text-xs">Click ▶ Start (2 min) to spawn agents</div>
                 </div>
               </div>

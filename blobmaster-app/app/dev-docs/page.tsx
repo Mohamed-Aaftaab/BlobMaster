@@ -152,21 +152,21 @@ const sk = new BlobMaster({
         <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-300 overflow-x-auto mb-8 font-mono">{`const status = await sk.getBlobStatus('5847291')
 // status.needsRenewal, status.epochsUntilExpiry, status.status: 'active' | 'expiring' | 'expired'`}</pre>
 
-        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 mt-10">Renew a blob (x402 USDC)</h3>
+        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 mt-10">Renew a blob (x402 ETH)</h3>
         <p className="text-zinc-400 text-sm mb-3">
           Calls <code className="rounded bg-zinc-900 px-1 font-mono text-xs text-zinc-300">POST {`\${blobmasterApiUrl}/api/blobs/:blobId/renew`}</code> with automatic payment headers from x402.
         </p>
         <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-300 overflow-x-auto mb-8 font-mono">{`const out = await sk.renewBlob(blobId, {
   durationEpochs: undefined, // SDK default: MIN_DEAL_DURATION
-  maxPriceUsdc: 1.0,         // abort if response cost exceeds this
+  maxPriceETH: 1.0,         // abort if response cost exceeds this
 })
-// out.txHash, out.basescanUrl, out.suivisionUrl, out.actualCostUsdc, …`}</pre>
+// out.txHash, out.basescanUrl, out.suivisionUrl, out.actualCostETH, …`}</pre>
 
         <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 mt-10">Autopilot</h3>
         <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-300 overflow-x-auto mb-8 font-mono">{`await sk.enableAutopilot({
   blobId,
   renewWhenEpochsLeft: 100_000,
-  maxPriceUsdc: 1.0,
+  maxPriceETH: 1.0,
   webhookUrl: 'https://your.app/hooks/blobmaster', // optional
   webhookSecret: '…', // optional
 })
@@ -174,7 +174,7 @@ const ap = await sk.getAutopilotStatus(blobId)
 await sk.disableAutopilot(blobId)`}</pre>
 
         <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 mt-10">Balance helper</h3>
-        <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-300 overflow-x-auto mb-8 font-mono">{`const { usdc, address, network } = await sk.getBalance()`}</pre>
+        <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-300 overflow-x-auto mb-8 font-mono">{`const { eth, address, network } = await sk.getBalance()`}</pre>
 
         <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3 mt-10">Storage (Walrus / Sui)</h3>
         <p className="text-zinc-400 text-sm mb-3">
@@ -218,7 +218,7 @@ await agent.store({ demo: true })`}</pre>
         <ul className="list-disc list-inside text-zinc-400 text-sm space-y-2 mb-4 marker:text-zinc-600">
           <li>Instantiate <code className="rounded bg-zinc-900 px-1 font-mono text-xs text-zinc-300">BlobMaster</code> only in <span className="text-zinc-200">API routes, Route Handlers, or server actions</span>—never in client components.</li>
           <li>Pass <code className="rounded bg-zinc-900 px-1 font-mono text-xs text-zinc-300">blobId</code> and options from authenticated requests; do not trust raw client input for spend limits.</li>
-          <li>For paid flows, ensure the wallet used by the SDK has enough USDC on the x402 network (e.g. Base Sepolia for Testnet).</li>
+          <li>For paid flows, ensure the wallet used by the SDK has enough ETH on the x402 network (e.g. Base Sepolia for Testnet).</li>
         </ul>
       </section>
 

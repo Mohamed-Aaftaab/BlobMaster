@@ -5,10 +5,10 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { blobId, renewWhenEpochsLeft = 100_000, maxPriceUsdc = 1.0, webhookUrl } = body
+  const { blobId, renewWhenEpochsLeft = 100_000, maxPriceETH = 1.0, webhookUrl } = body
 
-  if (!blobId || !/^\d+$/.test(blobId)) {
-    return NextResponse.json({ error: 'blobId must be a numeric string' }, { status: 400 })
+  if (!blobId) {
+    return NextResponse.json({ error: 'blobId is required' }, { status: 400 })
   }
 
   // DB skipped — demo mode returns success without persistence
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     blobId,
     monitoringActive: true,
     renewWhenEpochsLeft,
-    maxPriceUsdc,
+    maxPriceETH,
     nextCheckAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
     webhookConfigured: !!webhookUrl,
     demoPaid: true,

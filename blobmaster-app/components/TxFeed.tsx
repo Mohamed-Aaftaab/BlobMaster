@@ -11,7 +11,7 @@ interface TxLine {
   type:           string
   cid?:           string
   blobId?:        string
-  costUsdc?:      string
+  costETH?:      string
   basescanUrl?:   string | null
   suivisionUrl?:     string | null
   status?:        string
@@ -55,7 +55,7 @@ export function TxFeed() {
       type:          e.type,
       cid:           e.cid,
       blobId:        e.blobId,
-      costUsdc:      e.costUsdc,
+      costETH:      e.costETH,
       basescanUrl:   e.basescanUrl ?? null,
       suivisionUrl:     e.suivisionUrl ?? null,
       status:        e.status,
@@ -85,10 +85,10 @@ export function TxFeed() {
               </span>
             )}
           </span>
-          {l.costUsdc
-            ? <span className="shrink-0 text-gray-400">${l.costUsdc} USDC</span>
+          {l.costETH
+            ? <span className="shrink-0 text-gray-400">${l.costETH} ETH</span>
             : l.amount
-              ? <span className="shrink-0 text-gray-400">{l.amount.toFixed(3)} USDC</span>
+              ? <span className="shrink-0 text-gray-400">{l.amount.toFixed(3)} ETH</span>
               : null}
         </div>
       ))}

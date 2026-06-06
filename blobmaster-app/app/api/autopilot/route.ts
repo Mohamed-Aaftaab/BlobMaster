@@ -9,16 +9,16 @@ const WALLET = process.env.BLOBMASTER_WALLET_ADDRESS! as `0x${string}`
 
 async function handler(req: NextRequest) {
   const body = await req.json()
-  const { blobId, renewWhenEpochsLeft = 100_000, maxPriceUsdc = 1.00, webhookUrl } = body
+  const { blobId, renewWhenEpochsLeft = 100_000, maxPriceETH = 1.00, webhookUrl } = body
 
-  if (!blobId || !/^\d+$/.test(blobId)) {
-    return NextResponse.json({ error: 'blobId must be a numeric string' }, { status: 400 })
+  if (!blobId) {
+    return NextResponse.json({ error: 'blobId is required' }, { status: 400 })
   }
 
   const registration = await prisma.autopilot.upsert({
     where:  { blobId },
-    update: { renewWhenEpochsLeft, maxPriceUsdc, webhookUrl, active: true },
-    create: { blobId, renewWhenEpochsLeft, maxPriceUsdc, webhookUrl, active: true },
+    update: { renewWhenEpochsLeft, maxPriceETH, webhookUrl, active: true },
+    create: { blobId, renewWhenEpochsLeft, maxPriceETH, webhookUrl, active: true },
   })
 
   return NextResponse.json({

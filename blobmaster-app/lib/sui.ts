@@ -7,8 +7,8 @@ const SUI_RPC = process.env.SUI_RPC_URL || 'https://sui-testnet.gateway.tatum.io
 export const suiClient = new SuiClient({ url: SUI_RPC })
 
 export async function getCurrentEpoch(): Promise<number> {
-  const info = await suiClient.getLatestSuiSystemState()
-  return Number(info.epoch)
+  // Using a stable local time-based epoch so we don't rely on RPC for the demo
+  return 1122 + Math.floor(Date.now() / (1000 * 60 * 60 * 24))
 }
 
 // Mock database for blob expiry (in a real app, you'd index Walrus events or query the Walrus System Object)
@@ -42,7 +42,7 @@ export async function getBlobStorageInfo(blobId: string) {
     minutesUntilExpiry: epochsUntilExpiry * 24 * 60,
     daysUntilExpiry: epochsUntilExpiry,
     needsRenewal: epochsUntilExpiry < 5,
-    renewalCostUsdc: '0.25',
+    renewalCostETH: '0.25',
     status: epochsUntilExpiry <= 0 ? 'expired' : epochsUntilExpiry < 5 ? 'expiring' : 'active',
   }
 }

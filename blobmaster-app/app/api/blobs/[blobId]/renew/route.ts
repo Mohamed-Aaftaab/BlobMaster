@@ -19,7 +19,7 @@ function demoResult(blobId: string) {
     blobId,
     txHash: '0xdemo',
     paymentTxHash: '0xdemo',
-    actualCostUsdc: '0.000',
+    actualCostETH: '0.000',
     newExpiryEpoch: 0,
     newExpiryDate: new Date(now + approxSixMonthsMs).toISOString(),
     suivisionUrl: null,
@@ -32,7 +32,7 @@ async function handler(req: NextRequest) {
   // withX402 calls handler(request) without params — extract blobId from URL
   const blobId = req.nextUrl.pathname.split('/').at(-2) ?? ''
 
-  if (!blobId || blobId.length < 20) {
+  if (!blobId ) {
     return NextResponse.json({ error: 'Invalid blob ID' }, { status: 400 })
   }
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   // Demo mode: skip x402 middleware entirely (so no BLOBMASTER_WALLET_ADDRESS required).
   if (isDemo(req)) {
     const blobId = req.nextUrl.pathname.split('/').at(-2) ?? ''
-    if (!blobId || blobId.length < 20) {
+    if (!blobId ) {
       return NextResponse.json({ error: 'Invalid blob ID' }, { status: 400 })
     }
     return NextResponse.json(demoResult(blobId))

@@ -11,7 +11,7 @@ model Autopilot {
   id                  String   @id @default(cuid())
   blobId              String   @unique
   renewWhenEpochsLeft Int      @default(100000)
-  maxPriceUsdc        Float    @default(1.00)
+  maxPriceETH         Float    @default(1.00) @map("maxPriceUsdc")
   webhookUrl          String?
   active              Boolean  @default(true)
   createdAt           DateTime @default(now())

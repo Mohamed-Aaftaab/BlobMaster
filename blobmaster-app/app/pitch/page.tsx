@@ -236,7 +236,7 @@ function ProductSlide() {
     {
       icon: <RefreshCw size={22} strokeWidth={1.25} className="text-white/35" aria-hidden />,
       fn: 'renewBlob',
-      note: 'Pay with x402 / USDC; follow the receipt. This is the line we want you to trace in the explorer.',
+      note: 'Pay with x402 / ETH; follow the receipt. This is the line we want you to trace in the explorer.',
     },
     {
       icon: <Zap size={22} strokeWidth={1.25} className="text-white/35" aria-hidden />,
@@ -378,7 +378,7 @@ function SuiSlide() {
             <h3 className="text-xl font-semibold text-white">Primary: x402 + blobs</h3>
           </div>
           <p className="text-[15px] leading-relaxed" style={{ color: MUTED }}>
-            Follow USDC and renewal from the app or SDK into chain evidence. That is the main bar for “does Sui +
+            Follow ETH and renewal from the app or SDK into chain evidence. That is the main bar for “does Sui +
             payments work.”
           </p>
         </div>

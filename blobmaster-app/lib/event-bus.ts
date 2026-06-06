@@ -16,7 +16,7 @@ export interface AgentEvent {
   total?:    number
   // Blob renewal fields
   blobId?:        string
-  costUsdc?:      string
+  costETH?:      string
   paymentTxHash?: string | null
   suiTxHash?: string | null
   basescanUrl?:   string | null

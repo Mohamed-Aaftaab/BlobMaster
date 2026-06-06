@@ -15,7 +15,7 @@ export interface AgentEvent {
   remaining?:  number
   total?:      number
   blobId?:     string
-  costUsdc?:   string
+  costETH?:   string
   basescanUrl?: string | null
   suivisionUrl?:  string | null
   status?:     string

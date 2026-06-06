@@ -51,7 +51,7 @@ export function runGuardian(agent: Agent, cycleMs: number, stopped: () => boolea
 
             try {
               const result = await performRenewal(blobId, process.env.BLOBMASTER_WALLET_ADDRESS ?? a.id)
-              const cost = parseFloat(result.actualCostUsdc)
+              const cost = parseFloat(result.actualCostETH)
 
               agentStore.addTransaction({
                 timestamp: Date.now(),
@@ -65,13 +65,13 @@ export function runGuardian(agent: Agent, cycleMs: number, stopped: () => boolea
               a.txCount++
               a.budget -= cost
 
-              console.log(`[${a.id}] Renewed blob ${blobId} — $${result.actualCostUsdc} USDC`)
+              console.log(`[${a.id}] Renewed blob ${blobId} — $${result.actualCostETH} ETH`)
               if (result.txHash)        console.log(`  SuiVision:   ${SUIVISION}/${result.txHash}`)
 
               await emitAgentEvent('agent:renew', {
                 agentId:        a.id,
                 blobId,
-                costUsdc:       result.actualCostUsdc,
+                costETH:       result.actualCostETH,
                 paymentTxHash:  null,
                 suiTxHash: result.txHash ?? null,
                 basescanUrl:    null,

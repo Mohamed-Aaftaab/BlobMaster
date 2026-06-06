@@ -10,7 +10,7 @@ export async function GET(
 ) {
   const { blobId } = params
 
-  if (!blobId || blobId.length < 20) {
+  if (!blobId ) {
     return NextResponse.json({ error: 'Invalid blob ID (must be base64url)' }, { status: 400 })
   }
 

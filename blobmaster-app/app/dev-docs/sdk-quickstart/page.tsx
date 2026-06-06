@@ -53,7 +53,7 @@ export default function SdkQuickstartPage() {
           <li>A <span className="text-zinc-200">Sui Testnet</span> blob ID you are allowed to renew (client wallet matches your key).</li>
           <li>
             <span className="text-zinc-200">BLOBMASTER_WALLET_PRIVATE_KEY</span> - EOA with Testnet SUI for gas-related flows and{' '}
-            <span className="text-zinc-200">USDC on Base Sepolia</span> for x402 renewal charges (Sui Testnet defaults in the SDK).
+            <span className="text-zinc-200">ETH on Base Sepolia</span> for x402 renewal charges (Sui Testnet defaults in the SDK).
           </li>
         </ul>
       </section>
@@ -117,7 +117,7 @@ SUI_RPC_URL=https://sui-testnet.gateway.tatum.io
         <p className="text-zinc-400 text-sm mb-6 leading-relaxed">
           Operations teams often need a script or cron job that answers:{' '}
           <span className="text-zinc-200">Is my blob close to expiry? Should we renew now?</span>{' '}
-          The repo includes a minimal worker that mirrors that flow — inspect status, then optionally charge USDC and renew.
+          The repo includes a minimal worker that mirrors that flow — inspect status, then optionally charge ETH and renew.
         </p>
         <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 text-xs text-zinc-300 overflow-x-auto font-mono mb-3">{`blobmaster-app/examples/blob-health-worker.ts`}</pre>
         <p className="text-zinc-500 text-xs">
@@ -150,11 +150,11 @@ npx tsx examples/blob-health-worker.ts YOUR_DEAL_ID --renew`}</pre>
           </div>
           <div className="p-4 text-sm bg-zinc-900/20">
             <div className="text-emerald-400/90 font-mono text-xs mb-1">getBlobStatus(blobId)</div>
-            <p className="text-zinc-500">Free chain read — iblob for cron polling without spending USDC.</p>
+            <p className="text-zinc-500">Free chain read — iblob for cron polling without spending ETH.</p>
           </div>
           <div className="p-4 text-sm bg-zinc-900/20">
-            <div className="text-emerald-400/90 font-mono text-xs mb-1">renewBlob(blobId, {'{ maxPriceUsdc }'})</div>
-            <p className="text-zinc-500">Paid path: x402 USDC; use <code className="font-mono text-zinc-400">maxPriceUsdc</code> as a ceiling.</p>
+            <div className="text-emerald-400/90 font-mono text-xs mb-1">renewBlob(blobId, {'{ maxPriceETH }'})</div>
+            <p className="text-zinc-500">Paid path: x402 ETH; use <code className="font-mono text-zinc-400">maxPriceETH</code> as a ceiling.</p>
           </div>
         </div>
       </section>
@@ -188,7 +188,7 @@ npx tsx examples/blob-health-worker.ts YOUR_DEAL_ID --renew`}</pre>
             <tbody className="text-zinc-400 divide-y divide-zinc-800">
               <tr>
                 <td className="p-3 text-emerald-400/90 font-mono text-xs">Chain reads</td>
-                <td className="p-3">Monitoring, dashboards, alerting — no USDC spend.</td>
+                <td className="p-3">Monitoring, dashboards, alerting — no ETH spend.</td>
               </tr>
               <tr>
                 <td className="p-3 text-emerald-400/90 font-mono text-xs">renewBlob</td>

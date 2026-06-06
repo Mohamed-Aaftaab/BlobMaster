@@ -68,7 +68,7 @@ class AgentStateStore {
       alive:          agents.filter(a => a.state !== 'dead').length,
       dead:           agents.filter(a => a.state === 'dead').length,
       critical:       agents.filter(a => a.state === 'critical').length,
-      totalUsdc:     this.transactions.reduce((s, t) => s + t.amount, 0),
+      totalETH:     this.transactions.reduce((s, t) => s + t.amount, 0),
       totalStoredBytes: agents.reduce((s, a) => s + a.storedBytes, 0),
       txCount:        this.transactions.length,
     }
