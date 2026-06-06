@@ -88,7 +88,7 @@ export function TxFeed() {
           {l.costUsdc
             ? <span className="shrink-0 text-gray-400">${l.costUsdc} USDC</span>
             : l.amount
-              ? <span className="shrink-0 text-gray-400">{l.amount.toFixed(3)} USDFC</span>
+              ? <span className="shrink-0 text-gray-400">{l.amount.toFixed(3)} USDC</span>
               : null}
         </div>
       ))}

@@ -76,7 +76,7 @@ const SUI_NODE: Node<AgentNodeData> = {
   data: { label:'Sui', type:'sui', budget:0, budgetTotal:0, stored:0, alive:true, pulsing:false, txCount:0, earned:0 },
 }
 
-interface Stats { alive:number; dead:number; critical:number; totalUsdfc:number; totalStoredBytes:number; txCount:number }
+interface Stats { alive:number; dead:number; critical:number; totalUsdc:number; totalStoredBytes:number; txCount:number }
 
 function fmtBytes(b: number) {
   if (b>1e9) return `${(b/1e9).toFixed(1)} GB`
@@ -286,7 +286,7 @@ export default function EconomyPage() {
         {[
           { color: '#fafafa', label: 'Producer → Store data' },
           { color: '#52525b', label: 'Sui → Consumer retrieve' },
-          { color: '#a1a1aa', label: 'Consumer → Pay USDFC' },
+          { color: '#a1a1aa', label: 'Consumer → Pay USDC' },
           { color: '#d4af37', label: 'Guardian → extend CID' },
         ].map(({ color, label }) => (
           <div key={label} className="flex items-center gap-1.5">
@@ -304,8 +304,8 @@ export default function EconomyPage() {
           <div className="p-4 border-b border-[#222]">
             <div className="text-neutral-500 text-[10px] uppercase tracking-widest mb-3 font-semibold">Agent Types</div>
             {[
-              { type:'producer', label:'Producer', desc:'Stores data, earns USDFC', color:'#fafafa', icon:'⬤' },
-              { type:'consumer', label:'Consumer', desc:'Retrieves, pays USDFC', color:'#a1a1aa', icon:'⬤' },
+              { type:'producer', label:'Producer', desc:'Stores data, earns USDC', color:'#fafafa', icon:'⬤' },
+              { type:'consumer', label:'Consumer', desc:'Retrieves, pays USDC', color:'#a1a1aa', icon:'⬤' },
               { type:'guardian', label:'Guardian', desc:'Extends expiring Blobs', color:'#d4af37', icon:'◆' },
             ].map(a => (
               <div key={a.type} style={{ borderLeft: `2px solid ${a.color}55` }}
@@ -326,7 +326,7 @@ export default function EconomyPage() {
                 <SRow l="Alive"    v={stats.alive}                  c="text-white" />
                 <SRow l="Dead"     v={stats.dead}                   c="text-red-500" />
                 <SRow l="TXs"      v={stats.txCount}                c="text-neutral-300" />
-                <SRow l="USDFC ↕"  v={stats.totalUsdfc.toFixed(3)} c="text-gold-500" />
+                <SRow l="USDC ↕"  v={stats.totalUsdc.toFixed(3)} c="text-gold-500" />
                 <SRow l="Storage"  v={fmtBytes(stats.totalStoredBytes)} c="text-neutral-300" />
               </div>
             ) : <div className="text-neutral-600 text-xs">—</div>}
@@ -342,7 +342,7 @@ export default function EconomyPage() {
                 </div>
                 <div className="space-y-1.5 text-[10px] text-slate-400">
                   <div className="flex justify-between"><span>Type</span><span className="text-slate-300">{selected.data.type}</span></div>
-                  <div className="flex justify-between"><span>Budget</span><span className="text-slate-300">{selected.data.budget.toFixed(3)} USDFC</span></div>
+                  <div className="flex justify-between"><span>Budget</span><span className="text-slate-300">{selected.data.budget.toFixed(3)} USDC</span></div>
                   <div className="flex justify-between"><span>Stored</span><span className="text-slate-300">{fmtBytes(selected.data.stored)}</span></div>
                   <div className="flex justify-between"><span>TXs</span><span className="text-slate-300">{selected.data.txCount}</span></div>
                   <div className="flex justify-between"><span>Status</span>
