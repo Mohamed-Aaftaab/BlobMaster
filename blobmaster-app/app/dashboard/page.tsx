@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { ConnectButton, useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { Transaction } from '@mysten/sui/transactions'
 import { BlobMaster } from 'blobmaster-sdk'
 
 const bm = new BlobMaster({ network: 'testnet' })
@@ -53,8 +54,12 @@ export default function DashboardPage() {
     if (!account) return setError('Connect your Sui Wallet first')
     setLoading(true); setError(null); setTxResult(null)
     try {
-      const txb = bm.createVaultTx()
-      const res = await signAndExecuteTransaction({ transaction: txb as any })
+      const txb = new Transaction()
+      txb.moveCall({
+        target: `${bm.networkConfig.packageId}::vault::create_vault`,
+        arguments: [],
+      })
+      const res = await signAndExecuteTransaction({ transaction: txb })
       setTxResult(res.digest)
       // Re-load vaults so the new one appears immediately
       try {
@@ -103,9 +108,20 @@ export default function DashboardPage() {
         balanced: { renewWhenEpochsLeft: 5,  epochsToAdd: 30, maxPricePerEpochMist: BigInt(1_000_000), keeperRewardMist: BigInt(50_000_000) },
         premium:  { renewWhenEpochsLeft: 30, epochsToAdd: 90, maxPricePerEpochMist: BigInt(5_000_000), keeperRewardMist: BigInt(200_000_000) },
       }
-      const blobSizeBytes = BigInt(status?.sizeBytes ?? 1000000)
-      const txb = bm.registerAutopilotTx(selectedVault, { blobId: trimmed, blobSizeBytes, ...config[profile] })
-      const res = await signAndExecuteTransaction({ transaction: txb as any })
+      const { renewWhenEpochsLeft: renewThreshold, epochsToAdd, maxPricePerEpochMist: maxPrice, keeperRewardMist: keeperReward } = config[profile]
+      const txb = new Transaction()
+      txb.moveCall({
+        target: `${bm.networkConfig.packageId}::vault::register_autopilot`,
+        arguments: [
+          txb.object(selectedVault),
+          txb.pure.string(trimmed),
+          txb.pure.u64(maxPrice),
+          txb.pure.u64(renewThreshold),
+          txb.pure.u64(epochsToAdd),
+          txb.pure.u64(keeperReward)
+        ],
+      })
+      const res = await signAndExecuteTransaction({ transaction: txb })
       setTxResult(res.digest)
     } catch (e: any) {
       const msg = e?.message || String(e)
@@ -121,8 +137,14 @@ export default function DashboardPage() {
     if (!selectedVault) return setError('Create a Vault first (Step 1)')
     setLoading(true); setError(null)
     try {
-      const txb = bm.depositSuiTx(selectedVault, 1.5)
-      const res = await signAndExecuteTransaction({ transaction: txb as any })
+      const depositMist = BigInt(1500000000)
+      const txb = new Transaction()
+      const [coin] = txb.splitCoins(txb.gas, [txb.pure.u64(depositMist)])
+      txb.moveCall({
+        target: `${bm.networkConfig.packageId}::vault::deposit`,
+        arguments: [txb.object(selectedVault), coin],
+      })
+      const res = await signAndExecuteTransaction({ transaction: txb })
       setTxResult(res.digest)
     } catch (e: any) {
       const msg = e?.message || String(e)
