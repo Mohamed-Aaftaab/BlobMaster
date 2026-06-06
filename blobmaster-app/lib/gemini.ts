@@ -30,7 +30,7 @@ export interface AgentDecision {
   dataToStore?: string  // JSON dataset to store
 }
 
-const MODEL = 'gemini-1.5-flash'
+const MODEL = 'gemini-1.5-flash-latest'
 
 export async function getAgentDecision(ctx: AgentContext): Promise<AgentDecision> {
   const genai = getGenAI()
