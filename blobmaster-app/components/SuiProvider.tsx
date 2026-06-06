@@ -4,13 +4,11 @@ import { getFullnodeUrl } from '@mysten/sui.js/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '@mysten/dapp-kit/dist/index.css'
 
-const tatumKey = process.env.NEXT_PUBLIC_TATUM_API_KEY ?? process.env.TATUM_API_KEY ?? ''
-const testnetUrl = tatumKey 
-  ? `https://sui-testnet.gateway.tatum.io/?apiKey=${tatumKey}`
-  : 'https://testnet.sui.rpcpool.com/'
+// Use our absolute proxy URL so Tatum API keys are securely injected by the backend
+const proxyUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/rpc` : 'http://localhost:3000/api/rpc'
 
 const { networkConfig } = createNetworkConfig({
-  testnet: { url: testnetUrl, network: 'sui:testnet' },
+  testnet: { url: proxyUrl, network: 'sui:testnet' },
   mainnet: { url: getFullnodeUrl('mainnet'), network: 'sui:mainnet' },
 })
 

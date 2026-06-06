@@ -4,22 +4,10 @@ import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography'
 
 // ── Tatum-powered Sui RPC ─────────────────────────────────────────────────────
-const TATUM_API_KEY = process.env.NEXT_PUBLIC_TATUM_API_KEY ?? process.env.TATUM_API_KEY ?? ''
-const TATUM_RPC     = 'https://sui-testnet.gateway.tatum.io'
-const SUI_RPC       = process.env.NEXT_PUBLIC_SUI_RPC_URL ?? (TATUM_API_KEY ? TATUM_RPC : 'https://testnet.sui.rpcpool.com/')
+// Use our absolute proxy URL so Tatum API keys are securely injected by the backend
+const SUI_RPC = typeof window !== 'undefined' ? `${window.location.origin}/api/rpc` : 'http://localhost:3000/api/rpc'
 
 function makeSuiClient(): SuiClient {
-  if (TATUM_API_KEY) {
-    return new SuiClient({
-      transport: new SuiHTTPTransport({
-        url: SUI_RPC,
-        fetch: (input: any, init?: any) => fetch(input, {
-          ...init,
-          headers: { ...(init?.headers ?? {}), 'x-api-key': TATUM_API_KEY },
-        }),
-      })
-    })
-  }
   return new SuiClient({ url: SUI_RPC })
 }
 
