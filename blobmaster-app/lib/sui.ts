@@ -9,17 +9,8 @@ const TATUM_RPC     = 'https://sui-testnet.gateway.tatum.io'
 const SUI_RPC       = process.env.SUI_RPC_URL ?? (TATUM_API_KEY ? TATUM_RPC : getFullnodeUrl('testnet'))
 
 function makeSuiClient(): SuiClient {
-  if (TATUM_API_KEY) {
-    return new SuiClient({
-      transport: new SuiHTTPTransport({
-        url: SUI_RPC,
-        fetch: (input: any, init?: any) => fetch(input, {
-          ...init,
-          headers: { ...(init?.headers ?? {}), 'x-api-key': TATUM_API_KEY },
-        }),
-      })
-    })
-  }
+  // SUI_RPC already contains ?apiKey=... from networks.ts if NEXT_PUBLIC_TATUM_API_KEY is set.
+  // Using custom headers like x-api-key in the browser triggers CORS errors.
   return new SuiClient({ url: SUI_RPC })
 }
 

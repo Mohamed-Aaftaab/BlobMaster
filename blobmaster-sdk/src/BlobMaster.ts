@@ -19,20 +19,8 @@ export class BlobMaster {
     this.networkConfig = getNetworkConfig(network)
     this.tatumApiKey   = options.tatumApiKey
 
-    // Build Tatum-authenticated SuiClient
-    const rpcUrl = options.suiRpc ?? this.networkConfig.suiRpc
-    this.suiClient = options.suiClient ?? new SuiClient({
-      url: rpcUrl,
-      ...(this.tatumApiKey ? {
-        // Tatum requires the API key as a header on all RPC calls
-        fetch: (input: any, init?: any) => fetch(input, {
-          ...init,
-          headers: {
-            ...(init?.headers ?? {}),
-            'x-api-key': this.tatumApiKey!,
-          },
-        }),
-      } : {}),
+    this.suiClient = new SuiClient({
+      url: this.networkConfig.suiRpc,
     })
 
     if (options.suiPrivateKey) {
