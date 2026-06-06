@@ -16,11 +16,21 @@ export async function POST(req: Request) {
       headers['x-api-key'] = apiKey
     }
     
-    const res = await fetch(rpcUrl, {
+    let res = await fetch(rpcUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     })
+    
+    // If Tatum rejects due to an invalid API key (401/403) or rate limit (429), immediately fallback to rpcpool
+    if (!res.ok) {
+      console.warn(`[RPC Proxy] Tatum returned ${res.status}, falling back to rpcpool...`)
+      res = await fetch('https://testnet.sui.rpcpool.com/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+    }
     
     const data = await res.json()
     return NextResponse.json(data)
