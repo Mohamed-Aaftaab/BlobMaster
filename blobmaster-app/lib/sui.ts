@@ -4,13 +4,10 @@ import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography'
 
 // ── Tatum-powered Sui RPC ─────────────────────────────────────────────────────
-const TATUM_API_KEY = process.env.NEXT_PUBLIC_TATUM_API_KEY ?? process.env.TATUM_API_KEY ?? ''
-const TATUM_RPC     = 'https://sui-testnet.gateway.tatum.io'
-const SUI_RPC       = process.env.SUI_RPC_URL ?? (TATUM_API_KEY ? TATUM_RPC : getFullnodeUrl('testnet'))
+// The browser hits our local Next.js proxy (/api/rpc), which injects the API key and forwards to Tatum.
+const SUI_RPC = '/api/rpc'
 
 function makeSuiClient(): SuiClient {
-  // SUI_RPC already contains ?apiKey=... from networks.ts if NEXT_PUBLIC_TATUM_API_KEY is set.
-  // Using custom headers like x-api-key in the browser triggers CORS errors.
   return new SuiClient({ url: SUI_RPC })
 }
 

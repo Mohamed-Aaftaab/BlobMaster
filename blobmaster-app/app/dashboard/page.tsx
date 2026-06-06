@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react'
 import { ConnectButton, useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { BlobMaster } from 'blobmaster-sdk'
 
-const bm = new BlobMaster({ network: 'testnet' })
+// Pass the local Next.js proxy to the SDK so it bypasses all CORS and rate limits!
+const bm = new BlobMaster({ network: 'testnet', suiRpc: '/api/rpc' })
 
 export default function DashboardPage() {
   const [blobId, setBlobId]       = useState('')
