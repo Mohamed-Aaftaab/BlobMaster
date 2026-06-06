@@ -28,6 +28,12 @@ export default function DashboardPage() {
   const [privKey, setPrivKey] = useState('')
   const [showPrivKey, setShowPrivKey] = useState(false)
 
+  // 🎬 DEMO MODE — simulates the full flow for recording/presentation
+  const [demoMode, setDemoMode] = useState(false)
+  const DEMO_VAULT = '0xac64b2f3e8d1a7c4f0291b83e6d5a2c7f4e1b8d3'
+  const DEMO_BLOB  = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw'
+  const DEMO_TX    = '7xK9mP2qR4nB8vD1jF5hL3wC6yA0tE2sU4zN7oX'
+
   const account = useCurrentAccount()
   const { mutateAsync: signTransaction } = useSignTransaction()
   const suiClient = useSuiClient()
@@ -85,6 +91,15 @@ export default function DashboardPage() {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   async function createVault() {
+    if (demoMode) {
+      setLoading(true); setError(null); setTxResult(null)
+      await new Promise(r => setTimeout(r, 1800))
+      setVaults([{ objectId: DEMO_VAULT, balance: '0' }])
+      setSelectedVault(DEMO_VAULT)
+      setTxResult(DEMO_TX)
+      setLoading(false)
+      return
+    }
     if (!account) return setError('Connect your Sui Wallet first')
     setLoading(true); setError(null); setTxResult(null)
     try {
@@ -119,10 +134,16 @@ export default function DashboardPage() {
   }
 
   async function checkBlob() {
-    const trimmed = blobId.trim()
+    const trimmed = blobId.trim() || (demoMode ? DEMO_BLOB : '')
     if (!trimmed) return setError('Enter a Blob ID')
     setLoading(true); setError(null); setStatus(null); setTxResult(null)
     try {
+      if (demoMode) {
+        await new Promise(r => setTimeout(r, 1200))
+        setBlobId(DEMO_BLOB)
+        setStatus({ blobId: DEMO_BLOB, certified: true, active: true, sizeBytes: 2048576, expiresAt: Date.now() + 86400000 * 30, needsRenewal: false })
+        setLoading(false); return
+      }
       const res  = await fetch(`/api/blobs/${encodeURIComponent(trimmed)}/status`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch blob')
@@ -137,12 +158,17 @@ export default function DashboardPage() {
   }
 
   async function enableAutopilot() {
-    if (!account)       return setError('Connect your Sui Wallet first')
+    if (!demoMode && !account)       return setError('Connect your Sui Wallet first')
     if (!selectedVault) return setError('Create a Vault first (Step 1)')
-    const trimmed = blobId.trim()
+    const trimmed = blobId.trim() || DEMO_BLOB
     if (!trimmed)       return setError('Enter a Blob ID first')
     setLoading(true); setError(null)
     try {
+      if (demoMode) {
+        await new Promise(r => setTimeout(r, 2000))
+        setTxResult(DEMO_TX)
+        setLoading(false); return
+      }
       const config = {
         saver:    { renewWhenEpochsLeft: 1,  epochsToAdd: 10, maxPricePerEpochMist: BigInt(500_000),   keeperRewardMist: BigInt(10_000_000) },
         balanced: { renewWhenEpochsLeft: 5,  epochsToAdd: 30, maxPricePerEpochMist: BigInt(1_000_000), keeperRewardMist: BigInt(50_000_000) },
@@ -173,10 +199,15 @@ export default function DashboardPage() {
   }
 
   async function depositToVault() {
-    if (!account)       return setError('Connect your Sui Wallet first')
+    if (!demoMode && !account)       return setError('Connect your Sui Wallet first')
     if (!selectedVault) return setError('Create a Vault first (Step 1)')
     setLoading(true); setError(null)
     try {
+      if (demoMode) {
+        await new Promise(r => setTimeout(r, 1500))
+        setTxResult(DEMO_TX)
+        setLoading(false); return
+      }
       const depositMist = BigInt(1500000000)
       const txb = new Transaction()
       const [coin] = txb.splitCoins(txb.gas, [txb.pure.u64(depositMist)])
@@ -195,9 +226,23 @@ export default function DashboardPage() {
     }
   }
 
-  // ── UI ──────────────────────────────────────────────────────────────────────
+  // ── UI ────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-transparent p-4 sm:p-8 text-slate-200">
+      {/* 🎬 Demo Mode Banner */}
+      <div className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 text-sm font-semibold transition-all ${
+        demoMode ? 'bg-amber-500 text-black' : 'bg-neutral-900/80 text-neutral-400 border-b border-neutral-800'
+      }`}>
+        <span>{demoMode ? '🎬 DEMO MODE — All actions are simulated for presentation' : 'Live Mode — connected to Sui Testnet'}</span>
+        <button
+          onClick={() => { setDemoMode(!demoMode); setVaults([]); setSelectedVault(''); setTxResult(null); setError(null) }}
+          className={`px-3 py-1 rounded-full text-xs font-bold border transition ${
+            demoMode ? 'bg-black text-amber-400 border-amber-400 hover:bg-amber-900' : 'bg-amber-500 text-black border-transparent hover:bg-amber-400'
+          }`}
+        >
+          {demoMode ? '⏹ Exit Demo' : '🎬 Enable Demo Mode'}
+        </button>
+      </div>
       <div className="max-w-2xl mx-auto font-sans">
 
         {/* Header */}
