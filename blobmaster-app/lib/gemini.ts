@@ -104,6 +104,6 @@ Identify any recurring patterns (e.g. users forgetting to fund their wallets, Wa
     const result = await model.generateContent(prompt)
     return result.response.text()
   } catch (e: any) {
-    return `⚠️ Failed to generate AI diagnostics: ${e.message}`
+    return `⚠️ Failed to generate AI diagnostics: ${e.message}\n\n**RAW LOGS (AI unavailable):**\n\`\`\`json\n${JSON.stringify(logs.slice(0, 5), null, 2)}\n\`\`\``
   }
 }
