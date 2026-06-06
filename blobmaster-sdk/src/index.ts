@@ -17,8 +17,8 @@ export type {
 } from './types'
 export {
   BlobMasterError,
-  InsufficientUsdcError,
-  PriceExceededError,
+  InsufficientETHError,
+  PriceExceededError, NetworkTimeoutError,
   X402PaymentError,
   BlobNotFoundError,
   BlobExpiredError,

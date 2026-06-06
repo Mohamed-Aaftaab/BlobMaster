@@ -12,7 +12,9 @@ export interface StoreResult {
 }
 
 export interface BlobMasterConfig {
-  /** EOA private key — used for both x402 USDC payments and SUI/Walrus storage ops */
+  /** API Key for authenticated requests */
+  apiKey?: string
+  /** EOA private key — used for both x402 ETH payments and SUI/Walrus storage ops */
   privateKey?: `0x${string}`
   /** Explicit x402 wallet override. Defaults to { privateKey } when privateKey is set. */
   x402Wallet?: WalletClient | { privateKey: `0x${string}` }
@@ -28,7 +30,7 @@ export interface BlobStatus {
   epochsUntilExpiry: number
   daysUntilExpiry: number
   needsExtension: boolean
-  extensionCostUsdc: string
+  extensionCostETH: string
   status: 'active' | 'expiring' | 'expired'
 }
 
@@ -37,7 +39,7 @@ export interface ExtensionResult {
   blobId: string
   txHash: string
   paymentTxHash: string
-  actualCostUsdc: string
+  actualCostETH: string
   newExpiryEpoch: number
   newExpiryDate: string
   suiVisionUrl: string
@@ -45,14 +47,14 @@ export interface ExtensionResult {
 }
 
 export interface ExtendOptions {
-  maxPriceUsdc?: number
+  maxPriceETH?: number
   epochs?: number
 }
 
 export interface AutopilotConfig {
-  blobId: string
+  blobId: string | string[]
   extendWhenEpochsLeft?: number
-  maxPriceUsdc?: number
+  maxPriceETH?: number
   webhookUrl?: string
   webhookSecret?: string
 }
@@ -69,7 +71,7 @@ export interface AutopilotRegistration {
 export interface ExtensionRecord {
   epoch: number
   txHash: string
-  costUsdc: string
+  costETH: string
   timestamp: string
 }
 
@@ -77,7 +79,7 @@ export interface AutopilotStatus {
   blobId: string
   monitoringActive: boolean
   extensionHistory: ExtensionRecord[]
-  totalSpentUsdc: string
+  totalSpentETH: string
   nextCheckAt: string
 }
 
@@ -86,14 +88,14 @@ export interface NetworkConfig {
   blobMasterApiUrl: string
   walrusSystemObjectId: string
   x402Network: string
-  usdcAddress: string
+  ETHAddress: string
   explorerUrl: string
   basescanUrl: string
   chainId: number
 }
 
 export interface BalanceResult {
-  usdc: string
+  ETH: string
   address: string
   network: string
 }

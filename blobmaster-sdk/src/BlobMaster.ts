@@ -1,7 +1,14 @@
 import { createX402Fetch } from './x402/client'
 import { getNetworkConfig } from './config/networks'
 import { validateBlobId, validateNetwork } from './utils/validators'
-import { EPOCHS_PER_DAY } from './utils/epochs'
+import {
+  EPOCHS_PER_DAY,
+  epochsToMs,
+  msToEpochs,
+  epochsToHuman,
+  daysToEpochs,
+  EPOCHS_PER_MONTH
+} from './utils/epochs'
 import { getFullnodeUrl, SuiClient } from '@mysten/sui.js/client'
 import {
   BlobNotFoundError,
@@ -24,11 +31,23 @@ import type {
 } from './types'
 
 export class BlobMaster {
+  // ── Static Utilities ────────────────────────────────────────────────────────
+  static utils = {
+    epochsToMs,
+    msToEpochs,
+    epochsToHuman,
+    daysToEpochs,
+    constants: {
+      EPOCHS_PER_DAY,
+      EPOCHS_PER_MONTH
+    }
+  }
   private readonly x402Fetch: ReturnType<typeof createX402Fetch>
   private readonly networkConfig: NetworkConfig
   private readonly suiRpc: string
   private readonly privateKey: `0x${string}` | undefined
   private readonly suiClient: SuiClient
+  private readonly apiKey: string | undefined
 
   constructor(options: BlobMasterConfig) {
     const network = options.network ?? 'testnet'
@@ -42,6 +61,7 @@ export class BlobMaster {
 
     this.suiRpc = options.suiRpc ?? this.networkConfig.suiRpc
     this.privateKey = options.privateKey
+    this.apiKey = options.apiKey
 
     this.suiClient = new SuiClient({ url: this.suiRpc })
 
@@ -102,44 +122,57 @@ export class BlobMaster {
     return response.json() as Promise<BlobStatus>
   }
 
-  // ── x402-gated — $0.25 USDC per call ────────────────────────────────────────
+  // ── x402-gated — $0.25 ETH per call ────────────────────────────────────────
   async extendBlob(blobId: string, opts: ExtendOptions = {}): Promise<ExtensionResult> {
     validateBlobId(blobId)
 
-    const maxPriceUsdc = opts.maxPriceUsdc ?? 1.00
+    const maxPriceETH = opts.maxPriceETH ?? 1.00
     const epochs = opts.epochs ?? 30 // extend for 30 epochs by default
 
     const response = await this.x402Fetch(
       `${this.networkConfig.blobMasterApiUrl}/api/blobs/${blobId}/extend`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
+        },
         body: JSON.stringify({ epochs }),
       }
     )
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      this.throwTypedError(error, blobId, maxPriceUsdc)
+      this.throwTypedError(error, blobId, maxPriceETH)
     }
 
     const result = await response.json() as ExtensionResult
 
-    if (parseFloat(result.actualCostUsdc) > maxPriceUsdc) {
-      throw new PriceExceededError(result.actualCostUsdc, String(maxPriceUsdc))
+    if (parseFloat(result.actualCostETH) > maxPriceETH) {
+      throw new PriceExceededError(result.actualCostETH, String(maxPriceETH))
     }
 
     return result
   }
 
-  // ── x402-gated — $0.10 USDC to register ────────────────────────────────────
-  async enableAutopilot(config: AutopilotConfig): Promise<AutopilotRegistration> {
-    validateBlobId(config.blobId)
+  /**
+   * Register a Walrus blob with the BlobMaster Agent Network for autonomous lifecycle management.
+   * Your blob will be continually monitored, and if its remaining epochs fall below the threshold,
+   * an automated ETH payment will be dispatched to extend it.
+   *
+   * @param config - The configuration for the autopilot registration
+   * @returns The autopilot registration details
+   */
+  async enableAutopilot(config: AutopilotConfig): Promise<AutopilotRegistration | AutopilotRegistration[]> {
+    const blobIds = Array.isArray(config.blobId) ? config.blobId : [config.blobId]
+    for (const id of blobIds) {
+      validateBlobId(id)
+    }
 
     const payload = {
       blobId: config.blobId,
       extendWhenEpochsLeft: config.extendWhenEpochsLeft ?? 10,
-      maxPriceUsdc: config.maxPriceUsdc ?? 1.00,
+      maxPriceETH: config.maxPriceETH ?? 1.00,
       webhookUrl: config.webhookUrl,
       webhookSecret: config.webhookSecret,
     }
@@ -148,17 +181,20 @@ export class BlobMaster {
       `${this.networkConfig.blobMasterApiUrl}/api/autopilot`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
+        },
         body: JSON.stringify(payload),
       }
     )
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: response.statusText }))
-      this.throwTypedError(error, config.blobId)
+      this.throwTypedError(error, Array.isArray(config.blobId) ? config.blobId[0] : config.blobId)
     }
 
-    return response.json() as Promise<AutopilotRegistration>
+    return response.json() as Promise<AutopilotRegistration | AutopilotRegistration[]>
   }
 
   // ── Free ────────────────────────────────────────────────────────────────────
@@ -167,7 +203,12 @@ export class BlobMaster {
 
     const response = await fetch(
       `${this.networkConfig.blobMasterApiUrl}/api/autopilot/${blobId}`,
-      { method: 'DELETE' }
+      { 
+        method: 'DELETE',
+        headers: {
+          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
+        }
+      }
     )
 
     if (!response.ok) {
@@ -183,7 +224,12 @@ export class BlobMaster {
     validateBlobId(blobId)
 
     const response = await fetch(
-      `${this.networkConfig.blobMasterApiUrl}/api/autopilot/${blobId}`
+      `${this.networkConfig.blobMasterApiUrl}/api/autopilot/${blobId}`,
+      {
+        headers: {
+          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
+        }
+      }
     )
 
     if (!response.ok) {
@@ -198,7 +244,12 @@ export class BlobMaster {
   async getBalance(): Promise<BalanceResult> {
     const response = await fetch(
       `${this.networkConfig.blobMasterApiUrl}/api/balance`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { 
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {})
+        } 
+      }
     )
 
     if (!response.ok) {
@@ -208,14 +259,26 @@ export class BlobMaster {
     return response.json() as Promise<BalanceResult>
   }
 
-  private throwTypedError(error: { code?: string; message?: string }, blobId?: string, maxPriceUsdc?: number): never {
+  // ── Free ────────────────────────────────────────────────────────────────────
+  async getAuditTrail(blobId: string): Promise<any> {
+    validateBlobId(blobId)
+    const response = await fetch(
+      `${this.networkConfig.blobMasterApiUrl}/api/audit?blobId=${blobId}`
+    )
+    if (!response.ok) {
+      throw new BlobMasterError('Failed to fetch audit trail', 'AUDIT_FETCH_FAILED')
+    }
+    return response.json()
+  }
+
+  private throwTypedError(error: { code?: string; message?: string }, blobId?: string, maxPriceETH?: number): never {
     switch (error.code) {
       case 'BLOB_NOT_FOUND':
         throw new BlobNotFoundError(blobId ?? 'unknown')
       case 'BLOB_EXPIRED':
         throw new BlobExpiredError(blobId ?? 'unknown')
       case 'PRICE_EXCEEDED':
-        throw new PriceExceededError(error.message ?? '?', String(maxPriceUsdc ?? '?'))
+        throw new PriceExceededError(error.message ?? '?', String(maxPriceETH ?? '?'))
       default:
         throw new BlobMasterError(error.message ?? 'Unknown error', error.code ?? 'UNKNOWN')
     }

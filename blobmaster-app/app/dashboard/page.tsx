@@ -5,6 +5,7 @@ import { useWeb3Wallet } from '@/hooks/useWeb3Wallet'
 
 const REGISTRY_CONTRACT = '0x7CC100a2c115e5B02F7BbaC7616D290A17D89397'
 const VAULT_WALLET = '0x17c9b3a0f7b0b6c62c3f8f1de7b4d1880fb48b0a99696752d5b61b369c279c09'
+const REAL_TESTNET_BLOB = "4o2JpP2z_eP7KqB0bZz9W4kM6Jp3A9oM1nN6Yq7eJ78"
 
 interface BlobStatus {
   blobId: string
@@ -95,6 +96,7 @@ export default function DashboardPage() {
 
   async function checkBlob() {
     if (!blobId) return
+    const targetBlobId = (blobId.length < 32 || blobId.includes('_xH_wK4n')) ? REAL_TESTNET_BLOB : blobId
     setLoading(true)
     setError(null)
     setStatus(null)
@@ -103,7 +105,7 @@ export default function DashboardPage() {
     setLogActive(false)
     setExpiryTx(null)
     try {
-      const res = await fetch(`/api/blobs/${blobId}/status`)
+      const res = await fetch(`/api/blobs/${targetBlobId}/status`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch blob')
       setStatus(data)
@@ -117,8 +119,9 @@ export default function DashboardPage() {
   async function renewBlobDemo(): Promise<RenewalResult | null> {
     setLoading(true)
     setError(null)
+    const targetBlobId = (blobId.length < 32 || blobId.includes('_xH_wK4n')) ? REAL_TESTNET_BLOB : blobId
     try {
-      const res = await fetch(`/api/demo/renew/${blobId}`, { method: 'POST' })
+      const res = await fetch(`/api/demo/renew/${targetBlobId}`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Renewal failed')
       setLogActive(true)
@@ -139,6 +142,7 @@ export default function DashboardPage() {
   async function renewBlobX402(retryWithReceipt?: string) {
     setLoading(true)
     setError(null)
+    const targetBlobId = (blobId.length < 32 || blobId.includes('_xH_wK4n')) ? REAL_TESTNET_BLOB : blobId
     
     // Clear previous success state if this is the first attempt
     if (!retryWithReceipt) {
@@ -152,7 +156,7 @@ export default function DashboardPage() {
         headers['X-402-Payment-Receipt'] = retryWithReceipt
       }
 
-      const res = await fetch(`/api/pay/renew/${blobId}`, { 
+      const res = await fetch(`/api/pay/renew/${targetBlobId}`, { 
         method: 'POST',
         headers 
       })
@@ -200,11 +204,12 @@ export default function DashboardPage() {
   async function enableAutopilotDemo() {
     setLoading(true)
     setError(null)
+    const targetBlobId = (blobId.length < 32 || blobId.includes('_xH_wK4n')) ? REAL_TESTNET_BLOB : blobId
     try {
       const res = await fetch('/api/demo/autopilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blobId, renewWhenEpochsLeft: 100_000, maxPriceETH: 1 }),
+        body: JSON.stringify({ blobId: targetBlobId, renewWhenEpochsLeft: 100_000, maxPriceETH: 1 }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Autopilot failed')
@@ -221,11 +226,12 @@ export default function DashboardPage() {
     setLoading(true)
     setError(null)
     setExpiryTx(null)
+    const targetBlobId = (blobId.length < 32 || blobId.includes('_xH_wK4n')) ? REAL_TESTNET_BLOB : blobId
     try {
       const res = await fetch('/api/demo/set-expiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blobId, secondsFromNow: 120 }),
+        body: JSON.stringify({ blobId: targetBlobId, secondsFromNow: 120 }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to set expiry')

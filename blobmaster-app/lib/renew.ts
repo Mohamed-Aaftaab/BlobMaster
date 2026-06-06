@@ -24,6 +24,20 @@ export async function performRenewal(blobId: string, payerAddress = 'demo') {
           epochAtRenewal: currentEpoch,
         },
       })
+
+      // Fire webhook if configured
+      const autopilot = await prisma.autopilot.findUnique({ where: { blobId } })
+      if (autopilot?.webhookUrl) {
+        try {
+          await fetch(autopilot.webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'RENEWED', blobId, txHash, epochAtRenewal: currentEpoch })
+          })
+        } catch (webhookError) {
+          console.warn('[webhook] Failed to fire webhook for', blobId, webhookError)
+        }
+      }
     }
   } catch (e: any) {
     console.warn('[db] Skipped:', e.message)

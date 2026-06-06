@@ -11,25 +11,32 @@ export class BlobMasterError extends Error {
 }
 
 // Payment errors
-export class InsufficientUsdcError extends BlobMasterError {
-  constructor(message = 'Wallet USDC balance is insufficient for extension') {
-    super(message, 'INSUFFICIENT_USDC')
-    this.name = 'InsufficientUsdcError'
+export class InsufficientETHError extends BlobMasterError {
+  constructor(message = 'Wallet ETH balance is insufficient for extension') {
+    super(message, 'INSUFFICIENT_ETH')
+    this.name = 'InsufficientETHError'
   }
 }
 
 export class PriceExceededError extends BlobMasterError {
-  actualCostUsdc: string
-  maxPriceUsdc: string
+  actualCostETH: string
+  maxPriceETH: string
 
-  constructor(actualCostUsdc: string, maxPriceUsdc: string) {
+  constructor(actualCostETH: string, maxPriceETH: string) {
     super(
-      `Extension cost $${actualCostUsdc} USDC exceeds maxPriceUsdc $${maxPriceUsdc} USDC`,
+      `Extension cost $${actualCostETH} ETH exceeds maxPriceETH $${maxPriceETH} ETH`,
       'PRICE_EXCEEDED'
     )
     this.name = 'PriceExceededError'
-    this.actualCostUsdc = actualCostUsdc
-    this.maxPriceUsdc = maxPriceUsdc
+    this.actualCostETH = actualCostETH
+    this.maxPriceETH = maxPriceETH
+  }
+}
+
+export class NetworkTimeoutError extends BlobMasterError {
+  constructor(message = 'Network request timed out') {
+    super(message, 'NETWORK_TIMEOUT')
+    this.name = 'NetworkTimeoutError'
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "blobmaster-sdk",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "BlobMaster SDK - SUI deal renewal (x402) plus Agent Vault agent runtime (Walrus, Tatum)",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
