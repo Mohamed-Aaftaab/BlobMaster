@@ -11,7 +11,7 @@ import type {
   BudgetInfo,
 } from './agentTypes'
 
-const MIN_BALANCE = 0.001  // USDFC — die below this
+const MIN_BALANCE = 0.001  // USDC — die below this
 
 export class AgentVault {
   readonly id:         string
@@ -31,7 +31,7 @@ export class AgentVault {
     this.id          = config.agentId ?? `${config.agentType}-${Date.now().toString(36)}`
     this.agentType   = config.agentType
     this.privateKey  = config.privateKey
-    this.rpcUrl      = config.rpcUrl ?? 'https://api.calibration.node.glif.io/rpc/v1'
+    this.rpcUrl      = config.rpcUrl ?? 'https://sui-testnet.gateway.tatum.io'
     this._budget     = parseFloat(config.budget)
     this._budgetTotal= parseFloat(config.budget)
     this._state      = 'alive'
@@ -50,19 +50,19 @@ export class AgentVault {
     }
 
     const epochs = options?.ttl ? Number(options.ttl) : 5
-    const cid = await walrus.store(buf, epochs)
+    const blobId = await walrus.store(buf, epochs)
     const bytes = buf.length
-    this._stored.set(cid, { bytes, tag: options?.tag })
-    await this._emitEvent('agent:store', { agentId: this.id, cid, bytes })
-    return { cid, bytes }
+    this._stored.set(blobId, { bytes, tag: options?.tag })
+    await this._emitEvent('agent:store', { agentId: this.id, blobId, bytes })
+    return { blobId, bytes }
   }
 
-  async retrieve(cid: string): Promise<Buffer> {
+  async retrieve(blobId: string): Promise<Buffer> {
     this._requireAlive()
-    const listing = await this._fetchListing(cid)
+    const listing = await this._fetchListing(blobId)
     if (listing) {
       const cost = parseFloat(listing.pricePerRetrieve)
-      await this._charge(cost, `retrieve:${cid}`)
+      await this._charge(cost, `retrieve:${blobId}`)
       await this._emitEvent('agent:pay', {
         from: this.id,
         to:   listing.agentId,
@@ -70,34 +70,34 @@ export class AgentVault {
         reason: 'retrieve',
       })
     }
-    return walrus.retrieve(cid)
+    return walrus.retrieve(blobId)
   }
 
-  async renew(cid: string): Promise<void> {
+  async renew(blobId: string): Promise<void> {
     this._requireAlive()
-    await this._charge(0.005, `renew:${cid}`)
+    await this._charge(0.005, `renew:${blobId}`)
   }
 
-  async prune(cid: string): Promise<void> {
+  async prune(blobId: string): Promise<void> {
     // Walrus blobs auto-expire; no explicit delete needed.
-    this._stored.delete(cid)
-    this._listings.delete(cid)
-    await this._emitEvent('agent:prune', { agentId: this.id, cid })
+    this._stored.delete(blobId)
+    this._listings.delete(blobId)
+    await this._emitEvent('agent:prune', { agentId: this.id, blobId })
   }
 
   async pruneAll(): Promise<void> {
-    for (const cid of this._stored.keys()) {
-      await this.prune(cid).catch(() => {})
+    for (const blobId of this._stored.keys()) {
+      await this.prune(blobId).catch(() => {})
     }
   }
 
   // ── Agent economy ───────────────────────────────────────────────────
 
-  async announce(cid: string, pricing: { pricePerRetrieve: string }): Promise<void> {
-    this._listings.set(cid, pricing)
+  async announce(blobId: string, pricing: { pricePerRetrieve: string }): Promise<void> {
+    this._listings.set(blobId, pricing)
     await this._emitEvent('agent:announce', {
       agentId: this.id,
-      cid,
+      blobId,
       pricePerRetrieve: pricing.pricePerRetrieve,
     })
   }
@@ -129,8 +129,8 @@ export class AgentVault {
     }
   }
 
-  async chargeRescue(cid: string, fee: number): Promise<void> {
-    await this._charge(fee, `rescue:${cid}`)
+  async chargeRescue(blobId: string, fee: number): Promise<void> {
+    await this._charge(fee, `rescue:${blobId}`)
     await this._emitEvent('agent:pay', {
       from: this.id,
       to:   'guardian',
@@ -141,18 +141,18 @@ export class AgentVault {
 
   // ── Availability ────────────────────────────────────────────────────
 
-  async checkAvailability(cid: string): Promise<boolean> {
+  async checkAvailability(blobId: string): Promise<boolean> {
     try {
-      await walrus.retrieve(cid)
+      await walrus.retrieve(blobId)
       return true
     } catch {
       return false
     }
   }
 
-  async repin(cid: string): Promise<void> {
+  async extend(blobId: string): Promise<void> {
     // For Walrus, we would typically extend the blob on Sui
-    await this._emitEvent('agent:repin', { agentId: this.id, cid, success: true })
+    await this._emitEvent('agent:extend', { agentId: this.id, blobId, success: true })
   }
 
   async getWatchList(): Promise<string[]> {
@@ -203,9 +203,9 @@ export class AgentVault {
     }
   }
 
-  private async _fetchListing(cid: string): Promise<DatasetListing | null> {
+  private async _fetchListing(blobId: string): Promise<DatasetListing | null> {
     try {
-      const res = await fetch(`${this._apiBase}/api/listings/${cid}`)
+      const res = await fetch(`${this._apiBase}/api/listings/${blobId}`)
       if (!res.ok) return null
       return res.json()
     } catch {

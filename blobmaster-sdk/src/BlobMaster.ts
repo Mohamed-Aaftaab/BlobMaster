@@ -54,22 +54,30 @@ export class BlobMaster {
   // ── Storage — Walrus ───────────────────────────────────────────────
 
   /**
-   * Upload data to Walrus. Returns blobId and byte count.
-   * Note: In a real implementation, you'd use the Walrus publisher endpoint here.
+   * ARCHITECTURAL DECISION:
+   * We intentionally restrict direct data ingestion and extraction in the BlobMaster SDK.
+   * Proxying massive data buffers through a middle-tier SDK is an anti-pattern that creates memory bottlenecks.
+   * Developers should upload and download data directly via a native Walrus Publisher or Aggregator,
+   * and then pass the resulting `blobId` to BlobMaster strictly for x402 lifecycle automation and renewals.
+   * 
+   * If you need deep storage integration inside a Node environment, see AgentVault.ts
    */
   async store(data: Buffer | Uint8Array | object, options?: StoreOptions): Promise<StoreResult> {
-    if (!this.privateKey) throw new BlobMasterError('privateKey required for store()', 'INVALID_WALLET')
-    
-    // Placeholder for Walrus upload logic (typically requires SUI to pay for epochs)
-    // Walrus publishers accept PUT requests
-    throw new BlobMasterError('Not implemented - use Walrus Publisher directly', 'NOT_IMPLEMENTED')
+    throw new BlobMasterError(
+      'Direct data ingestion is intentionally disabled in the SDK. Please upload directly to a Walrus Publisher and register the blobId here for renewals.',
+      'NOT_IMPLEMENTED'
+    )
   }
 
   /**
-   * Download data from Walrus by BlobId.
+   * ARCHITECTURAL DECISION:
+   * Direct retrieval is disabled. See the architectural note above store().
    */
   async retrieve(blobId: string): Promise<Buffer> {
-    throw new BlobMasterError('Not implemented - use Walrus Aggregator directly', 'NOT_IMPLEMENTED')
+    throw new BlobMasterError(
+      'Direct data extraction is intentionally disabled in the SDK. Please download directly from a Walrus Aggregator using the blobId.',
+      'NOT_IMPLEMENTED'
+    )
   }
 
   // ── Free — queries Sui RPC / Walrus System directly, no payment ──────────────────────

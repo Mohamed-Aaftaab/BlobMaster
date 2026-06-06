@@ -12,8 +12,5 @@ export default defineConfig({
     'viem',
     'viem/accounts',
     'viem/chains',
-    '@filoz/synapse-sdk',
-    '@filoz/synapse-core',
-    '@filoz/synapse-core/chains',
   ],
 })

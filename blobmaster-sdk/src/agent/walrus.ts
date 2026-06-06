@@ -18,7 +18,7 @@ export class WalrusClient {
   async store(buffer: Buffer | Uint8Array, epochs: number = 5): Promise<string> {
     const res = await fetch(`${this.publisherUrl}/v1/store?epochs=${epochs}`, {
       method: 'PUT',
-      body: buffer,
+      body: buffer as any,
     });
     
     if (!res.ok) {

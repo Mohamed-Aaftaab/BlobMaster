@@ -2,7 +2,7 @@ export type AgentType = 'producer' | 'consumer' | 'guardian'
 export type AgentState = 'alive' | 'critical' | 'dead'
 
 export interface StoragePolicies {
-  maxCostPerStoreUsdfc: number
+  maxCostPerStoreUsdc: number
   minRedundancy: number
   defaultTTLDays: number
   pruneWhenBudgetPct: number
@@ -12,8 +12,8 @@ export interface StoragePolicies {
 
 export interface AgentVaultConfig {
   privateKey: `0x${string}`
-  budget: string          // USDFC starting budget e.g. '10'
-  network: 'calibration' | 'mainnet'
+  budget: string          // USDC starting budget e.g. '10'
+  network: 'testnet' | 'mainnet'
   agentType: AgentType
   agentId?: string
   policies?: Partial<StoragePolicies>
@@ -28,9 +28,9 @@ export interface StoreOptions {
 }
 
 export interface DatasetListing {
-  cid: string
+  blobId: string
   agentId: string
-  pricePerRetrieve: string  // USDFC
+  pricePerRetrieve: string  // USDC
   bytes: number
   tag?: string
 }
@@ -42,7 +42,7 @@ export interface BudgetInfo {
 }
 
 export interface StoreResult {
-  cid: string
+  blobId: string
   bytes: number
   txHash?: string
 }

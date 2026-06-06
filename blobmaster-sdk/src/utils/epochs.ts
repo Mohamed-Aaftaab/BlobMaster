@@ -1,4 +1,4 @@
-// 1 Filecoin epoch = 30 seconds
+// 1 Sui epoch = 24 hours
 export const EPOCHS_PER_SECOND = 1 / 30
 export const EPOCHS_PER_DAY = 2_880        // 86400 / 30
 export const EPOCHS_PER_MONTH = 86_400     // 30 days
