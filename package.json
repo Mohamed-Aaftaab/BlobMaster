@@ -1,0 +1,8 @@
+{
+  "name": "blobmaster",
+  "private": true,
+  "workspaces": [
+    "blobmaster-app",
+    "blobmaster-sdk"
+  ]
+}
