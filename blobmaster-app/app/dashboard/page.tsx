@@ -112,7 +112,6 @@ export default function DashboardPage() {
       }
       return res
     }
-    return res
   }
 
   // Load user's vaults whenever wallet connects — query RPC directly to avoid CORS issues
