@@ -5,7 +5,7 @@
   "scripts": {
     "test": "jest",
     "dev": "next dev",
-    "build": "npx prisma generate && npx prisma db push --accept-data-loss && next build",
+    "build": "cd ../blobmaster-sdk && npm run build && cd ../blobmaster-app && npx prisma generate && npx prisma db push --accept-data-loss && next build",
     "start": "next start",
     "lint": "next lint",
     "vercel:prod": "cd .. && npx vercel --prod"
