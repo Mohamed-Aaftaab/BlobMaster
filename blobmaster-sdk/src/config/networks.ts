@@ -16,10 +16,9 @@ const TESTNET_PACKAGE_ID = '0x7bee1f8b45bb2fd8350f7a963be2b63f34602b73af36c57d2c
 
 // Walrus API endpoints are used directly.
 
-// Tatum Sui RPC endpoints (https://tatum.io/tatum-x-walrus-hackathon)
 const TATUM_TESTNET_RPC = 'https://sui-testnet.gateway.tatum.io'
 const TATUM_MAINNET_RPC = 'https://sui-mainnet.gateway.tatum.io'
-const PUBLIC_TESTNET_RPC = 'https://fullnode.testnet.sui.io:443'
+const PUBLIC_TESTNET_RPC = 'https://testnet.sui.rpcpool.com/'
 
 const testnet: NetworkConfig = {
   blobMasterApiUrl:   'https://blobmaster-app.vercel.app',

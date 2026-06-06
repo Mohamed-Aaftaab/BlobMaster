@@ -7,7 +7,7 @@ import '@mysten/dapp-kit/dist/index.css'
 const tatumKey = process.env.NEXT_PUBLIC_TATUM_API_KEY ?? process.env.TATUM_API_KEY ?? ''
 const testnetUrl = tatumKey 
   ? `https://sui-testnet.gateway.tatum.io/?apiKey=${tatumKey}`
-  : getFullnodeUrl('testnet')
+  : 'https://testnet.sui.rpcpool.com/'
 
 const { networkConfig } = createNetworkConfig({
   testnet: { url: testnetUrl, network: 'sui:testnet' },
