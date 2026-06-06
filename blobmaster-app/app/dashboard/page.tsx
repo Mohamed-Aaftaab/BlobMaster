@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react'
 import { ConnectButton, useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
 import { BlobMaster } from 'blobmaster-sdk'
 
-// Pass the local Next.js proxy to the SDK so it bypasses all CORS and rate limits!
-const bm = new BlobMaster({ network: 'testnet', suiRpc: '/api/rpc' })
+const bm = new BlobMaster({ network: 'testnet' })
 
 export default function DashboardPage() {
   const [blobId, setBlobId]       = useState('')
@@ -58,12 +57,17 @@ export default function DashboardPage() {
       const res = await signAndExecuteTransaction({ transaction: txb as any })
       setTxResult(res.digest)
       // Re-load vaults so the new one appears immediately
-      const updated = await bm.getVaults(account.address)
-      setVaults(updated)
-      if (updated.length > 0) setSelectedVault(updated[0]?.objectId ?? '')
+      try {
+        const updated = await bm.getVaults(account.address)
+        setVaults(updated)
+        if (updated.length > 0) setSelectedVault(updated[0]?.objectId ?? '')
+      } catch (e) {
+        console.error('Failed to refresh vaults:', e)
+      }
     } catch (e: any) {
-      setError(e.message)
-      reportError('createVault', e.message)
+      const msg = e?.message || String(e)
+      setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
+      reportError('createVault', e?.message || String(e))
     } finally {
       setLoading(false)
     }
@@ -79,8 +83,9 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch blob')
       setStatus(data)
     } catch (e: any) {
-      setError(e.message)
-      reportError('checkBlob', e.message)
+      const msg = e?.message || String(e)
+      setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
+      reportError('checkBlob', e?.message || String(e))
     } finally {
       setLoading(false)
     }
@@ -103,8 +108,9 @@ export default function DashboardPage() {
       const res = await signAndExecuteTransaction({ transaction: txb as any })
       setTxResult(res.digest)
     } catch (e: any) {
-      setError(e.message)
-      reportError('enableAutopilot', e.message)
+      const msg = e?.message || String(e)
+      setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
+      reportError('enableAutopilot', e?.message || String(e))
     } finally {
       setLoading(false)
     }
@@ -119,8 +125,9 @@ export default function DashboardPage() {
       const res = await signAndExecuteTransaction({ transaction: txb as any })
       setTxResult(res.digest)
     } catch (e: any) {
-      setError(e.message)
-      reportError('depositToVault', e.message)
+      const msg = e?.message || String(e)
+      setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
+      reportError('depositToVault', e?.message || String(e))
     } finally {
       setLoading(false)
     }

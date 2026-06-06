@@ -21,6 +21,18 @@ export class BlobMaster {
 
     this.suiClient = new SuiClient({
       url: this.networkConfig.suiRpc,
+      ...(this.tatumApiKey ? {
+        transport: new SuiHTTPTransport({
+          url: this.networkConfig.suiRpc,
+          fetch: (input: any, init?: any) => fetch(input, {
+            ...init,
+            headers: {
+              ...(init?.headers ?? {}),
+              'x-api-key': this.tatumApiKey!,
+            },
+          }),
+        }),
+      } : {}),
     })
 
     if (options.suiPrivateKey) {

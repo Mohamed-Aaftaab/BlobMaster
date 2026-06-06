@@ -4,8 +4,13 @@ import { getFullnodeUrl } from '@mysten/sui.js/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '@mysten/dapp-kit/dist/index.css'
 
+const tatumKey = process.env.NEXT_PUBLIC_TATUM_API_KEY ?? process.env.TATUM_API_KEY ?? ''
+const testnetUrl = tatumKey 
+  ? `https://sui-testnet.gateway.tatum.io/?apiKey=${tatumKey}`
+  : getFullnodeUrl('testnet')
+
 const { networkConfig } = createNetworkConfig({
-  testnet: { url: getFullnodeUrl('testnet'), network: 'sui:testnet' },
+  testnet: { url: testnetUrl, network: 'sui:testnet' },
   mainnet: { url: getFullnodeUrl('mainnet'), network: 'sui:mainnet' },
 })
 
