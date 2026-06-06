@@ -23,7 +23,7 @@ const PUBLIC_TESTNET_RPC = 'https://fullnode.testnet.sui.io:443'
 
 const testnet: NetworkConfig = {
   blobMasterApiUrl:   'https://blobmaster-app.vercel.app',
-  suiRpc:             PUBLIC_TESTNET_RPC, // Safe fix: fallback to public RPC
+  suiRpc:             process.env.NEXT_PUBLIC_TATUM_API_KEY ? `https://sui-testnet.gateway.tatum.io/?apiKey=${process.env.NEXT_PUBLIC_TATUM_API_KEY}` : PUBLIC_TESTNET_RPC,
   packageId:          TESTNET_PACKAGE_ID,
   priceOracleId:      '0x763f0c276f1fb8f6e58f59ffe5cdcf4b82e0d3e2d95d7d0e5aed351530a4be3d',
   walrusPublisher:    'https://publisher.walrus-testnet.walrus.space',
