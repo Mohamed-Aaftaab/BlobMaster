@@ -59,7 +59,7 @@ export default function DashboardPage() {
         target: `${bm.networkConfig.packageId}::vault::create_vault`,
         arguments: [],
       })
-      const res = await signAndExecuteTransaction({ transaction: txb })
+      const res = await signAndExecuteTransaction({ transaction: txb, chain: 'sui:testnet' })
       setTxResult(res.digest)
       // Re-load vaults so the new one appears immediately
       try {
