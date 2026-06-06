@@ -71,7 +71,7 @@ class AgentStateStore {
 
   pruneListings() {
     let deleted = 0
-    for (const [key, value] of this.listings.entries()) {
+    for (const [key, value] of Array.from(this.listings.entries())) {
       if (value.status === 'expired') {
         this.listings.delete(key)
         deleted++
