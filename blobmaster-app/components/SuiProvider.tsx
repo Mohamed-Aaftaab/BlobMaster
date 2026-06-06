@@ -5,8 +5,8 @@ import '@mysten/dapp-kit/dist/index.css'
 
 // Use public RPC directly for dapp-kit so wallet tx simulation works perfectly
 const { networkConfig } = createNetworkConfig({
-  testnet: { url: 'https://fullnode.testnet.sui.io:443', variables: { network: 'sui:testnet' } },
-  mainnet: { url: 'https://fullnode.mainnet.sui.io:443', variables: { network: 'sui:mainnet' } },
+  testnet: { url: 'https://fullnode.testnet.sui.io:443' },
+  mainnet: { url: 'https://fullnode.mainnet.sui.io:443' },
 })
 
 const queryClient = new QueryClient()
