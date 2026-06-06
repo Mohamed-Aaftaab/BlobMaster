@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ConnectButton, useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { ConnectButton, useCurrentAccount, useSignTransaction, useSuiClient } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
 import { BlobMaster } from 'blobmaster-sdk'
 
@@ -24,7 +24,21 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<'saver' | 'balanced' | 'premium'>('balanced')
 
   const account = useCurrentAccount()
-  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction()
+  const { mutateAsync: signTransaction } = useSignTransaction()
+  const suiClient = useSuiClient()
+
+  async function signAndRun(txb: Transaction) {
+    const { bytes, signature } = await signTransaction({ transaction: txb, chain: 'sui:testnet' })
+    const res = await suiClient.executeTransactionBlock({
+      transactionBlock: bytes,
+      signature,
+      options: { showEffects: true, showObjectChanges: true },
+    })
+    if (res.effects?.status?.status !== 'success') {
+      throw new Error(res.effects?.status?.error ?? 'Transaction failed on chain')
+    }
+    return res
+  }
 
   // Load user's vaults whenever wallet connects
   useEffect(() => {
@@ -59,8 +73,8 @@ export default function DashboardPage() {
         target: `${bm.networkConfig.packageId}::vault::create_vault`,
         arguments: [],
       })
-      const res = await signAndExecuteTransaction({ transaction: txb, chain: 'sui:testnet' })
-      setTxResult(res.digest)
+      const res = await signAndRun(txb)
+      setTxResult(res.digest ?? '')
       // Re-load vaults so the new one appears immediately
       try {
         const updated = await bm.getVaults(account.address)
@@ -71,8 +85,14 @@ export default function DashboardPage() {
       }
     } catch (e: any) {
       const msg = e?.message || String(e)
-      setError(msg.includes('toJSON') ? 'Sui Network is currently busy or rate-limiting. Please try again in a moment!' : msg)
-      reportError('createVault', e?.message || String(e))
+      if (msg.toLowerCase().includes('incorrect password') || msg.toLowerCase().includes('wrong password')) {
+        setError('⚠️ Slush Wallet has a corrupted session. Please: 1) Click the Slush icon in your browser toolbar 2) Enter your password to UNLOCK it 3) Then click Create Vault again while keeping Slush open.')
+      } else if (msg.includes('toJSON')) {
+        setError('Sui Network is currently busy or rate-limiting. Please try again in a moment!')
+      } else {
+        setError(msg)
+      }
+      reportError('createVault', msg)
     } finally {
       setLoading(false)
     }
@@ -121,7 +141,7 @@ export default function DashboardPage() {
           txb.pure.u64(keeperReward)
         ],
       })
-      const res = await signAndExecuteTransaction({ transaction: txb })
+      const res = await signAndRun(txb)
       setTxResult(res.digest)
     } catch (e: any) {
       const msg = e?.message || String(e)
@@ -144,7 +164,7 @@ export default function DashboardPage() {
         target: `${bm.networkConfig.packageId}::vault::deposit`,
         arguments: [txb.object(selectedVault), coin],
       })
-      const res = await signAndExecuteTransaction({ transaction: txb })
+      const res = await signAndRun(txb)
       setTxResult(res.digest)
     } catch (e: any) {
       const msg = e?.message || String(e)
