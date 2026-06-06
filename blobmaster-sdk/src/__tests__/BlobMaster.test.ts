@@ -123,9 +123,9 @@ describe('Validators', () => {
 
 // ── Network config ────────────────────────────────────────────────────────────
 describe('Network config', () => {
-  it('testnet uses Tatum RPC', () => {
+  it('testnet uses public fallback RPC', () => {
     const cfg = getNetworkConfig('testnet')
-    expect(cfg.suiRpc).toContain('tatum.io')
+    expect(cfg.suiRpc).toContain('fullnode.testnet.sui.io')
     expect(cfg.suiRpc).toContain('testnet')
   })
 
@@ -150,19 +150,15 @@ describe('Network config', () => {
 
 // ── BlobMaster SDK class ──────────────────────────────────────────────────────
 describe('BlobMaster SDK', () => {
-  let bm: BlobMaster
+  const bm = new BlobMaster({ network: 'testnet' })
 
-  beforeEach(() => {
-    bm = new BlobMaster({ network: 'testnet' })
-  })
-
-  it('instantiates without error', () => {
+  it('instantiates correctly', () => {
     expect(bm).toBeInstanceOf(BlobMaster)
   })
 
-  it('exposes networkConfig with Tatum RPC', () => {
+  it('exposes networkConfig', () => {
     expect(bm.networkConfig).toBeDefined()
-    expect(bm.networkConfig.suiRpc).toContain('tatum.io')
+    expect(bm.networkConfig.suiRpc).toContain('fullnode.testnet.sui.io')
     expect(bm.networkConfig.packageId).toBeTruthy()
   })
 
@@ -197,17 +193,17 @@ describe('BlobMaster SDK', () => {
   })
 
   it('registerAutopilotTx handles a single blobId', () => {
-    const txb = bm.registerAutopilotTx('0x1234', { blobId: 'A'.repeat(44) })
+    const txb = bm.registerAutopilotTx('0x1234', { blobId: 'A'.repeat(44), blobSizeBytes: BigInt(10000) })
     expect(txb).toBeDefined()
   })
 
   it('registerAutopilotTx handles batch blobIds', () => {
-    const txb = bm.registerAutopilotTx('0x1234', { blobId: ['A'.repeat(44), 'B'.repeat(44)] })
+    const txb = bm.registerAutopilotTx('0x1234', { blobId: ['A'.repeat(44), 'B'.repeat(44)], blobSizeBytes: BigInt(10000) })
     expect(txb).toBeDefined()
   })
 
   it('registerAutopilotTx rejects invalid blobId', () => {
-    expect(() => bm.registerAutopilotTx('0x1234', { blobId: 'bad' })).toThrow()
+    expect(() => bm.registerAutopilotTx('0x1234', { blobId: 'bad', blobSizeBytes: BigInt(10000) })).toThrow()
   })
 
   it('deleteRuleTx returns a TransactionBlock', () => {

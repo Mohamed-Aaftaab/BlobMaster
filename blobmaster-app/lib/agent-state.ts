@@ -18,6 +18,7 @@ export interface Agent {
   bornAt:       number
   diedAt?:      number
   activeBlobIds:   string[]
+  hasBeenRevived?: boolean
 }
 
 export interface Transaction {
@@ -59,7 +60,28 @@ class AgentStateStore {
     const full = { ...tx, id: `tx-${Date.now()}-${Math.random().toString(36).slice(2)}` }
     this.transactions.unshift(full)
     if (this.transactions.length > 200) this.transactions.pop()
+    
+    // Periodically prune expired or excess listings to prevent memory leaks
+    if (this.transactions.length % 50 === 0) {
+      this.pruneListings()
+    }
+    
     return full
+  }
+
+  pruneListings() {
+    let deleted = 0
+    for (const [key, value] of this.listings.entries()) {
+      if (value.status === 'expired') {
+        this.listings.delete(key)
+        deleted++
+      }
+    }
+    // Hard cap at 5000 to be extremely safe
+    if (this.listings.size > 5000) {
+      const keysToDelete = Array.from(this.listings.keys()).slice(0, this.listings.size - 5000)
+      for (const k of keysToDelete) this.listings.delete(k)
+    }
   }
 
   getStats() {

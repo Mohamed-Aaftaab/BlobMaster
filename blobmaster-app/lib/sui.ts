@@ -1,4 +1,4 @@
-import { getFullnodeUrl, SuiClient } from '@mysten/sui.js/client'
+import { getFullnodeUrl, SuiClient, SuiHTTPTransport } from '@mysten/sui.js/client'
 import { TransactionBlock } from '@mysten/sui.js/transactions'
 import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography'
@@ -11,11 +11,13 @@ const SUI_RPC       = process.env.SUI_RPC_URL ?? (TATUM_API_KEY ? TATUM_RPC : ge
 function makeSuiClient(): SuiClient {
   if (TATUM_API_KEY) {
     return new SuiClient({
-      url:   SUI_RPC,
-      fetch: (input: any, init?: any) => fetch(input, {
-        ...init,
-        headers: { ...(init?.headers ?? {}), 'x-api-key': TATUM_API_KEY },
-      }),
+      transport: new SuiHTTPTransport({
+        url: SUI_RPC,
+        fetch: (input: any, init?: any) => fetch(input, {
+          ...init,
+          headers: { ...(init?.headers ?? {}), 'x-api-key': TATUM_API_KEY },
+        }),
+      })
     })
   }
   return new SuiClient({ url: SUI_RPC })
@@ -57,7 +59,7 @@ const WALRUS_PUBLISHER  = process.env.WALRUS_PUBLISHER_URL
 
 /** Upload data to Walrus — returns blob ID */
 export async function uploadToWalrus(data: Uint8Array | string, epochs = 30): Promise<string> {
-  const body = typeof data === 'string' ? new TextEncoder().encode(data) : data
+  const body = (typeof data === 'string' ? new TextEncoder().encode(data) : data) as any
   const url  = `${WALRUS_PUBLISHER}/v1/blobs?epochs=${epochs}`
   const res  = await fetch(url, {
     method:  'PUT',
@@ -84,6 +86,7 @@ export async function getBlobStorageInfo(blobId: string) {
       const data         = await res.json() as any
       const endEpoch     = data?.storage?.end_epoch ?? data?.end_epoch ?? currentEpoch + renewalEpochs
       const epochsLeft   = Math.max(0, endEpoch - currentEpoch)
+      const sizeBytes    = data?.storage?.blob_size ?? data?.blob_size ?? 1000000
       return {
         blobId,
         storageNodeId:      'Walrus Network',
@@ -96,6 +99,7 @@ export async function getBlobStorageInfo(blobId: string) {
         renewalCostSUI:     estimateRenewalCostSUI(renewalEpochs),
         renewalEpochs,
         status:             epochsLeft <= 0 ? 'expired' : epochsLeft < 10 ? 'expiring' : 'active',
+        sizeBytes:          Number(sizeBytes),
       }
     }
   } catch { /* fallback below */ }
@@ -113,18 +117,20 @@ export async function getBlobStorageInfo(blobId: string) {
     renewalCostSUI:    estimateRenewalCostSUI(renewalEpochs),
     renewalEpochs,
     status:            'active' as const,
+    sizeBytes:         1000000,
   }
 }
 
 // ── Keeper: execute on-chain renewal via BlobMaster Move contract ──────────────
 const PACKAGE_ID = process.env.BLOBMASTER_PACKAGE_ID
-  ?? '0xf2c231a4ac2f95b6f88354a1a69b0e9e367bc728064b5ba14b5f8436b20f4a7e'
+  ?? '0xa664fa704cf238fa6d87bc950bca4401c05ede372c42bd874eaefefe40dda2cf'
 
 export async function extendWalrusBlob(
   blobId:   string,
   ruleId?:  string,
   vaultId?: string,
   epochs = 30,
+  requestedRewardMist: bigint = BigInt(0)
 ): Promise<{ txHash: string; keeper: string }> {
   const privateKeyBech32 = process.env.KEEPER_PRIVATE_KEY
 
@@ -154,12 +160,12 @@ export async function extendWalrusBlob(
         tx.object(ruleId),
         tx.object(vaultId),
         tx.pure(storageCostMist),
+        tx.pure(requestedRewardMist),
       ],
     })
   } else {
-    // Standalone: just record a self-transfer as a demo fallback
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure(BigInt(1_000))])
-    tx.transferObjects([coin], tx.pure(keypair.toSuiAddress()))
+    // Standalone demo: no ruleId provided
+    return { txHash: 'demo_tx_hash', keeper: keypair.toSuiAddress() }
   }
 
   const result = await suiClient.signAndExecuteTransactionBlock({

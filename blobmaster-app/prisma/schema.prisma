@@ -3,31 +3,15 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("POSTGRES_PRISMA_URL")
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
-model Autopilot {
-  id                  String   @id @default(cuid())
-  blobId              String   @unique
-  renewWhenEpochsLeft Int      @default(100000)
-  maxPriceETH         Float    @default(1.00) @map("maxPriceUsdc")
-  webhookUrl          String?
-  active              Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  renewals RenewalHistory[]
-}
-
-model RenewalHistory {
-  id              String    @id @default(cuid())
-  blobId          String
-  txHash          String
-  walrusJobId     String
-  receiptBlobId   String?
-  epochAtRenewal  Int
-  createdAt       DateTime  @default(now())
-
-  autopilot Autopilot @relation(fields: [blobId], references: [blobId])
+model TelemetryLog {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  source    String   // e.g. "keeper", "agent-economy"
+  type      String   // e.g. "error", "warning", "info"
+  message   String
 }

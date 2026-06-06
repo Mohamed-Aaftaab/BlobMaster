@@ -1,0 +1,23 @@
+[
+  {
+    "id": "err_1234",
+    "timestamp": 1700000000000,
+    "source": "frontend",
+    "type": "createVault",
+    "message": "User rejected the transaction signature."
+  },
+  {
+    "id": "err_1235",
+    "timestamp": 1700000005000,
+    "source": "keeper",
+    "type": "walrusPublisherFail",
+    "message": "Returned 502 Bad Gateway"
+  },
+  {
+    "id": "err_1236",
+    "timestamp": 1700000010000,
+    "source": "keeper",
+    "type": "executeRenewalRevert",
+    "message": "Reverted with Move error: EInsufficientFunds"
+  }
+]

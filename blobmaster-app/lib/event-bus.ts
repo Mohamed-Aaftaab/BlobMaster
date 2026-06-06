@@ -16,11 +16,10 @@ export interface AgentEvent {
   total?:    number
   // Blob renewal fields
   blobId?:        string
-  costETH?:      string
+  costSUI?:       string
   paymentTxHash?: string | null
-  suiTxHash?: string | null
-  basescanUrl?:   string | null
-  suivisionUrl?:     string | null
+  suiTxHash?:     string | null
+  suivisionUrl?:  string | null
   status?:        string
 }
 

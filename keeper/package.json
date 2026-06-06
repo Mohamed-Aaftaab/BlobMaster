@@ -1,0 +1,17 @@
+{
+  "name": "blobmaster-keeper",
+  "version": "1.0.0",
+  "description": "BlobMaster standalone keeper daemon — monitors Sui for expiring Walrus blobs and executes on-chain renewals",
+  "private": true,
+  "scripts": {
+    "start": "tsx keeper.ts",
+    "dev": "tsx --watch keeper.ts"
+  },
+  "dependencies": {
+    "@mysten/sui.js": "^0.54.1",
+    "tsx": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

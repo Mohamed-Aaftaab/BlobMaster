@@ -30,6 +30,7 @@ export interface AgentNodeData {
   pulsing:     boolean
   txCount:     number
   earned:      number
+  hasBeenRevived?: boolean
 }
 
 function formatBytes(b: number) {
@@ -43,7 +44,7 @@ export const AgentNodeCard = memo(function AgentNodeCard({
 }: {
   data: AgentNodeData
 }) {
-  const { type, label, budget, budgetTotal, stored, alive, pulsing, txCount, earned } = data
+  const { type, label, budget, budgetTotal, stored, alive, pulsing, txCount, earned, hasBeenRevived } = data
   const pct = budgetTotal > 0 ? budget / budgetTotal : 0
   const cls = [
     'agent-node',
@@ -79,7 +80,7 @@ export const AgentNodeCard = memo(function AgentNodeCard({
         ) : (
           <>
             <div className="flex justify-between">
-              <span className="text-neutral-500">Budget</span>
+              <span className="text-neutral-500">Budget {hasBeenRevived && alive && <span title="Revived Agent" className="ml-1">❤️‍🩹</span>}</span>
               <span style={{ color: alive ? typeColor(type) : '#666' }}>
                 {alive ? `${budget.toFixed(3)} USDFC` : 'dead'}
               </span>
@@ -124,7 +125,9 @@ export const AgentNodeCard = memo(function AgentNodeCard({
       )}
 
       {!alive && (
-        <div className="absolute -top-2 -right-2 text-[10px] font-bold text-red-500 bg-red-950/80 border border-red-900 px-2 py-0.5 rounded shadow-lg">DEAD</div>
+        <div className="absolute -top-3 -right-3 text-[11px] font-bold text-red-500 bg-red-950/90 border border-red-900 px-2 py-1 rounded shadow-lg flex items-center gap-1 z-10">
+          <span>💔</span> DEAD
+        </div>
       )}
     </div>
   )

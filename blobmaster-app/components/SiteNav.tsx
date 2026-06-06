@@ -22,6 +22,12 @@ export function SiteNav() {
             Dashboard
           </Link>
           <Link
+            href="/dashboard/diagnostics"
+            className="text-amber-400 hover:text-white hover:drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] transition-all flex items-center gap-1"
+          >
+            Diagnostics 🩺
+          </Link>
+          <Link
             href="/pitch"
             className="text-slate-300 hover:text-white hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)] transition-all"
           >

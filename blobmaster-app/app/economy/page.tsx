@@ -236,16 +236,35 @@ export default function EconomyPage() {
     setLoading(false)
   }
 
+  async function reviveAgent(agentId: string) {
+    setLoading(true)
+    try {
+      await fetch('/api/economy/revive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId })
+      })
+      loadAgents()
+      if (selected && selected.id === agentId) {
+        setSelected(nds => ({ ...nds, data: { ...nds!.data, alive: true, budget: nds!.data.budget + 50, hasBeenRevived: true } } as Node<AgentNodeData>))
+      }
+    } catch (e) {
+      console.error('Failed to revive agent:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col bg-transparent text-white overflow-hidden font-mono">
 
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 h-12 border-b border-[#222] bg-[#0a0a0a] rounded-none shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-white font-semibold text-sm tracking-tight">BlobMaster · Agent Vault</span>
-          <span className="text-neutral-500 text-xs">Secondary Market · 2-min Demo</span>
+          <span className="text-white font-semibold text-sm tracking-tight">BlobMaster · Agent Economy</span>
+          <span className="text-amber-600 text-xs font-bold">⚠ Simulation — visualises keeper behaviour, not live txs</span>
         </div>
-        <span className="text-neutral-300 text-sm font-semibold tracking-wide">Sui Calibration</span>
+        <span className="text-neutral-300 text-sm font-semibold tracking-wide">Sui Testnet</span>
         <div className="flex items-center gap-4 text-xs">
           {walletBalance && (
             <div className="flex items-center gap-1.5 text-yellow-400">
@@ -262,9 +281,9 @@ export default function EconomyPage() {
             </div>
           )}
 
-          <div className={`flex items-center gap-1.5 ${running?'text-white':'text-neutral-500'}`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${running?'bg-white animate-pulse shadow-[0_0_8px_#fff]':'bg-[#333]'}`}/>
-            {running?'LIVE':'IDLE'} · Calibration
+          <div className={`flex items-center gap-1.5 ${running?'text-amber-400':'text-neutral-500'}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${running?'bg-amber-400 animate-pulse':'bg-[#333]'}`}/>
+            {running?'SIMULATED':'IDLE'}
           </div>
           {!running ? (
             <button onClick={startEconomy} disabled={loading}
@@ -347,10 +366,19 @@ export default function EconomyPage() {
                   <div className="flex justify-between"><span>TXs</span><span className="text-slate-300">{selected.data.txCount}</span></div>
                   <div className="flex justify-between"><span>Status</span>
                     <span className={selected.data.alive?'text-white':'text-red-500'}>
-                      {selected.data.alive?'● Alive':'✕ Dead'}
+                      {selected.data.alive?'● Alive':(<span><span>💔</span> Dead</span>)}
                     </span>
                   </div>
                 </div>
+                {!selected.data.alive && (
+                  <button
+                    onClick={() => reviveAgent(selected.id)}
+                    disabled={loading}
+                    className="mt-4 w-full bg-red-950/50 hover:bg-red-900/50 border border-red-900/50 text-red-400 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
+                  >
+                    Revive Agent ⚡
+                  </button>
+                )}
               </div>
             </div>
           )}

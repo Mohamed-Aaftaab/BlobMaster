@@ -1,11 +1,9 @@
 import Link from 'next/link'
 import { HomeStats } from '@/components/HomeStats'
-import { getHomeStats } from '@/lib/stats-public'
 import { BackgroundBeams } from '@/components/ui/background-beams'
 import { Highlight } from '@/components/ui/hero-highlight'
 
 export default async function Home() {
-  const stats = await getHomeStats()
 
   return (
     <main className="min-h-[85vh] flex flex-col items-center justify-center text-center relative overflow-hidden">
@@ -16,7 +14,7 @@ export default async function Home() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gold-500 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-3 w-3 bg-gold-500"></span>
           </span>
-          Sui × x402 · Tatum RPC
+          Native Sui · Non-custodial
         </div>
         
         <h1 className="text-6xl md:text-8xl font-semibold mb-6 tracking-tight text-white">
@@ -25,9 +23,9 @@ export default async function Home() {
         
         <p className="text-xl md:text-2xl text-neutral-400 mb-12 max-w-3xl leading-relaxed">
           Walrus storage blobs expire. BlobMaster keeps them alive forever —
-          an AI agent deposits ETH once, and every blob
+          you deposit SUI into your own Vault, and every blob
           <span className="text-gold-500 font-semibold"> auto-extends </span> 
-          through x402 HTTP-native payments with zero human intervention.
+          via decentralized keepers with zero human intervention.
         </p>
         
         <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-6 w-full max-w-2xl">
@@ -38,7 +36,7 @@ export default async function Home() {
             href="/economy"
             className="px-8 py-4 rounded-xl border border-[#333] bg-black/50 text-white font-bold text-lg hover:border-gold-500/50 hover:bg-[#111] transition-all duration-300 flex items-center justify-center gap-2"
           >
-            Agent Vault Live Demo 
+            Agent Economy Simulation
             <span className="text-gold-500">→</span>
           </Link>
         </div>
@@ -46,18 +44,21 @@ export default async function Home() {
 
       <div className="w-full max-w-5xl px-6 relative z-10 my-16">
         <HomeStats
-          initialRenewals={stats.totalRenewals ?? 0}
-          initialAutopilots={stats.activeAutopilots ?? 0}
+          initialRenewals={0}
+          initialAutopilots={1}
         />
+        <p className="text-center text-neutral-600 text-xs mt-4">
+          Live counts from Sui Testnet · increments as keepers run
+        </p>
       </div>
 
       <section className="w-full max-w-5xl mx-auto px-6 py-16 relative z-10">
         <h2 className="text-3xl font-bold mb-12 text-transparent bg-clip-text bg-gradient-to-r from-white to-neutral-400">How it works</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
-            { step: '01', title: 'Check blob health', desc: 'getBlobStorageInfo() queries SUI via Tatum directly. No payment needed.', cost: 'Free', color: 'from-gold-400 to-gold-600' },
-            { step: '02', title: 'Extend on demand', desc: 'extendBlob() signs $0.001 ETH via x402. No MetaMask. No popup. Receipt stored on SUI.', cost: '$0.001 ETH', color: 'from-zinc-400 to-zinc-600' },
-            { step: '03', title: 'Set and forget', desc: 'enableAutopilot() registers monitoring. BlobMaster extends before expiry automatically.', cost: '$0.001 ETH', color: 'from-neutral-200 to-neutral-400' },
+            { step: '01', title: 'Check blob health', desc: 'Queries Walrus aggregator for expiry epoch. No payment needed.', cost: 'Free', color: 'from-gold-400 to-gold-600' },
+            { step: '02', title: 'Register Autopilot', desc: 'Create an on-chain rule in your Vault specifying the renewal threshold and keeper reward.', cost: 'Gas', color: 'from-zinc-400 to-zinc-600' },
+            { step: '03', title: 'Decentralized Keepers', desc: 'Keepers monitor Sui events and trigger execute_renewal() before your data drops.', cost: 'SUI Cost + Reward', color: 'from-neutral-200 to-neutral-400' },
           ].map(item => (
             <div key={item.step} className="group bg-[#0a0a0a] border border-[#222] p-8 rounded-2xl hover:border-gold-500/50 transition-all duration-300 relative overflow-hidden text-left shadow-xl">
               <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${item.color} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
@@ -81,9 +82,9 @@ export default async function Home() {
           <div className="p-6 overflow-x-auto bg-black">
             <pre className="text-sm font-mono leading-relaxed">
 <span className="text-gold-400">import</span> <span className="text-white">&#123; BlobMaster &#125;</span> <span className="text-gold-400">from</span> <span className="text-neutral-400">'blobmaster-sdk'</span>{'\n\n'}
-<span className="text-gold-400">const</span> <span className="text-white">bm</span> <span className="text-white">=</span> <span className="text-gold-400">new</span> <span className="text-white">BlobMaster</span><span className="text-white">(&#123; x402Wallet: wallet, network: </span><span className="text-neutral-400">'testnet'</span><span className="text-white"> &#125;)</span>{'\n\n'}
-<span className="text-white">await</span> <span className="text-white">bm.</span><span className="text-gold-400">enableAutopilot</span><span className="text-white">(&#123; blobId: </span><span className="text-neutral-400">'blob_123abc...'</span><span className="text-white">, extendWhenEpochsLeft: </span><span className="text-gold-400">10</span><span className="text-white"> &#125;)</span>{'\n'}
-<span className="text-[#666]">// Done. $0.001 ETH charged from wallet automatically on each extension.</span>
+<span className="text-gold-400">const</span> <span className="text-white">bm</span> <span className="text-white">=</span> <span className="text-gold-400">new</span> <span className="text-white">BlobMaster</span><span className="text-white">(&#123; network: </span><span className="text-neutral-400">'testnet'</span><span className="text-white"> &#125;)</span>{'\n\n'}
+<span className="text-white">await</span> <span className="text-white">bm.</span><span className="text-gold-400">registerAutopilotTx</span><span className="text-white">(vaultId, &#123; blobId: </span><span className="text-neutral-400">'blob_123abc...'</span><span className="text-white">, renewWhenEpochsLeft: </span><span className="text-gold-400">10</span><span className="text-white"> &#125;)</span>{'\n'}
+<span className="text-[#666]">// Done. Keeper bots will automatically extend the blob and claim SUI rewards.</span>
             </pre>
           </div>
         </div>

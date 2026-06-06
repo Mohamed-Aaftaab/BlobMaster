@@ -5,7 +5,7 @@ import { TransactionBlock } from '@mysten/sui.js/transactions'
 import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography'
 import { BlobMasterError } from './errors'
-import type { BlobMasterConfig, NetworkConfig, AutopilotConfig, WalrusBlobInfo } from './types'
+import type { BlobMasterConfig, NetworkConfig, AutopilotConfig, WalrusBlobInfo, AutopilotRuleEvent } from './types'
 
 export class BlobMaster {
   public readonly networkConfig: NetworkConfig
@@ -101,6 +101,7 @@ export class BlobMaster {
     const maxPrice    = config.maxPricePerEpoch     ?? 1_000_000
     const reward      = config.keeperReward         ?? 1_000_000
     const webhookUrl  = config.webhookUrl           ?? ''
+    const blobSizeBytes = config.blobSizeBytes
 
     for (const blobIdStr of blobIds) {
       validateBlobId(blobIdStr)
@@ -114,6 +115,8 @@ export class BlobMaster {
           txb.pure(maxPrice),
           txb.pure(reward),
           txb.pure(webhookUrl),
+          txb.pure(blobSizeBytes, 'u64'),
+          txb.object('0x6'), // Clock object
         ],
       })
     }
@@ -129,14 +132,19 @@ export class BlobMaster {
     return txb
   }
 
-  public executeRenewalTx(ruleId: string, vaultId: string, storageCostMist: bigint): TransactionBlock {
+  public executeRenewalTx(ruleId: string, vaultId: string, requestedRewardMist: bigint): TransactionBlock {
     const txb = new TransactionBlock()
+    const oracleId = this.networkConfig.priceOracleId
+    if (!oracleId) throw new Error('PriceOracle ID not configured for this network.')
+    
     txb.moveCall({
       target: `${this.networkConfig.packageId}::vault::execute_renewal`,
       arguments: [
+        txb.object(oracleId),
         txb.object(ruleId),
         txb.object(vaultId),
-        txb.pure(storageCostMist),
+        txb.pure(requestedRewardMist, 'u64'),
+        txb.object('0x6'), // Clock object
       ],
     })
     return txb
@@ -155,23 +163,41 @@ export class BlobMaster {
   }
 
   /** Query on-chain RuleCreated events to find all rules for a vault */
-  public async getRulesForVault(vaultId: string): Promise<any[]> {
+  public async getRulesForVault(vaultId: string): Promise<AutopilotRuleEvent[]> {
     const events = await this.suiClient.queryEvents({
       query: { MoveEventType: `${this.networkConfig.packageId}::vault::RuleCreated` },
       limit: 100,
     })
     return events.data
       .map(e => e.parsedJson as any)
-      .filter(j => j?.vault_id === vaultId)
+      .filter(j => {
+        const id = j?.vault_id;
+        return (typeof id === 'string' ? id : id?.bytes) === vaultId;
+      })
   }
 
   /** Query all RuleCreated events (for keepers) */
-  public async getAllRules(limit = 50): Promise<any[]> {
-    const events = await this.suiClient.queryEvents({
-      query: { MoveEventType: `${this.networkConfig.packageId}::vault::RuleCreated` },
-      limit,
-    })
-    return events.data.map(e => e.parsedJson)
+  public async getAllRules(limit = 1000): Promise<AutopilotRuleEvent[]> {
+    const rules: AutopilotRuleEvent[] = []
+    let hasNextPage = true
+    let cursor: string | null = null
+
+    while (hasNextPage && rules.length < limit) {
+      const events = await this.suiClient.queryEvents({
+        query: { MoveEventType: `${this.networkConfig.packageId}::vault::RuleCreated` },
+        cursor: cursor ? { txDigest: cursor, eventSeq: '0' } : undefined,
+        limit: Math.min(50, limit - rules.length),
+      })
+      
+      for (const e of events.data) {
+        rules.push(e.parsedJson as AutopilotRuleEvent)
+      }
+      
+      hasNextPage = events.hasNextPage
+      cursor = events.data[events.data.length - 1]?.id?.txDigest ?? null
+    }
+
+    return rules
   }
 
   /** Check blob status from the Walrus aggregator */

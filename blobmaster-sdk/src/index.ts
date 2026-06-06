@@ -3,6 +3,8 @@ export type {
   BlobMasterConfig,
   AutopilotConfig,
   NetworkConfig,
+  WalrusBlobInfo,
+  AutopilotRuleEvent,
 } from './types'
 export {
   BlobMasterError,
@@ -21,3 +23,4 @@ export {
   EPOCHS_PER_MONTH,
 } from './utils/epochs'
 export { getNetworkConfig } from './config/networks'
+export { validateBlobId, validateNetwork } from './utils/validators'

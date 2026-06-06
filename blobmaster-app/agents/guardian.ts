@@ -8,9 +8,9 @@ const SUIVISION   = 'https://testnet.suivision.xyz/tx'
 
 export function runGuardian(agent: Agent, cycleMs: number, stopped: () => boolean): () => void {
   async function cycle() {
-    const pk = getAgentSuiPrivateKey() as `0x${string}` | undefined
+    const pk = getAgentSuiPrivateKey()
     if (!pk) {
-      console.error('[guardian] Set BLOBMASTER_WALLET_PRIVATE_KEY')
+      console.error('[guardian] Set BLOBMASTER_WALLET_PRIVATE_KEY (suiprivkey... or 0x hex)')
       return
     }
 
@@ -51,7 +51,7 @@ export function runGuardian(agent: Agent, cycleMs: number, stopped: () => boolea
 
             try {
               const result = await performRenewal(blobId, process.env.BLOBMASTER_WALLET_ADDRESS ?? a.id)
-              const cost = parseFloat(result.actualCostETH)
+              const cost = parseFloat(result.actualCostSUI)
 
               agentStore.addTransaction({
                 timestamp: Date.now(),
@@ -65,16 +65,15 @@ export function runGuardian(agent: Agent, cycleMs: number, stopped: () => boolea
               a.txCount++
               a.budget -= cost
 
-              console.log(`[${a.id}] Renewed blob ${blobId} — $${result.actualCostETH} ETH`)
+              console.log(`[${a.id}] Renewed blob ${blobId} — ${result.actualCostSUI} SUI`)
               if (result.txHash)        console.log(`  SuiVision:   ${SUIVISION}/${result.txHash}`)
 
               await emitAgentEvent('agent:renew', {
                 agentId:        a.id,
                 blobId,
-                costETH:       result.actualCostETH,
+                costSUI:       result.actualCostSUI,
                 paymentTxHash:  null,
                 suiTxHash: result.txHash ?? null,
-                basescanUrl:    null,
                 suivisionUrl:      result.txHash ? `${SUIVISION}/${result.txHash}` : null,
               })
 
