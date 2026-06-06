@@ -1,6 +1,6 @@
 import { getNetworkConfig } from './config/networks'
 import { validateBlobId, validateNetwork } from './utils/validators'
-import { SuiClient } from '@mysten/sui.js/client'
+import { SuiClient, SuiHTTPTransport } from '@mysten/sui.js/client'
 import { TransactionBlock } from '@mysten/sui.js/transactions'
 import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519'
 import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography'
@@ -19,9 +19,8 @@ export class BlobMaster {
     this.networkConfig = getNetworkConfig(network)
     this.tatumApiKey   = options.tatumApiKey
 
-    this.suiClient = new SuiClient({
-      url: this.networkConfig.suiRpc,
-      ...(this.tatumApiKey ? {
+    if (this.tatumApiKey) {
+      this.suiClient = new SuiClient({
         transport: new SuiHTTPTransport({
           url: this.networkConfig.suiRpc,
           fetch: (input: any, init?: any) => fetch(input, {
@@ -32,8 +31,12 @@ export class BlobMaster {
             },
           }),
         }),
-      } : {}),
-    })
+      })
+    } else {
+      this.suiClient = new SuiClient({
+        url: this.networkConfig.suiRpc,
+      })
+    }
 
     if (options.suiPrivateKey) {
       this.keypair = this._parseKeypair(options.suiPrivateKey)
